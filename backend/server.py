@@ -24,6 +24,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
 
+from kathas_ekadashi import EKADASHI_BY_AMANTA, EKADASHI_KATHAS, EKADASHI_VIDHI, EKADASHI_VIDHI_HI
+from kathas_festivals import FESTIVAL_KATHAS, FESTIVAL_TO_KATHA, MONTHLY_KATHAS
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
@@ -152,6 +155,12 @@ def _tithi_at(jd: float) -> int:
     return int(_norm(_moon_longitude(jd) - _sun_longitude(jd)) // 12) + 1
 
 
+def skipped_tithi(sunrise_jd: float, sunrise_tithi: int) -> Optional[int]:
+    """Kshaya tithi: begins after today's sunrise and ends before tomorrow's, so it is observed today."""
+    nxt = _tithi_at(sunrise_jd + 1.0)
+    return sunrise_tithi % 30 + 1 if (nxt - sunrise_tithi) % 30 == 2 else None
+
+
 def festivals_for(sunrise_jd: float, sunrise_tithi: Optional[int] = None) -> List[str]:
     """Major festivals on the civil day starting at sunrise_jd.
 
@@ -160,6 +169,7 @@ def festivals_for(sunrise_jd: float, sunrise_tithi: Optional[int] = None) -> Lis
     """
     out = []
     cache: dict = {}
+    skip = skipped_tithi(sunrise_jd, sunrise_tithi or _tithi_at(sunrise_jd))
 
     def state(kala: str, day_shift: int):
         k = (kala, day_shift)
@@ -172,7 +182,10 @@ def festivals_for(sunrise_jd: float, sunrise_tithi: Optional[int] = None) -> Lis
 
     for (masa, num), fname in FESTIVALS.items():
         kala = next((v for k, v in FESTIVAL_KALA.items() if fname.startswith(k)), "sunrise")
-        if state(kala, 0) == (num, masa) and (kala == "sunrise" or state(kala, -1) != (num, masa)):
+        t_now, m_now = state(kala, 0)
+        if kala == "sunrise" and m_now == masa and num in (t_now, skip):
+            out.append(fname)
+        elif kala != "sunrise" and (t_now, m_now) == (num, masa) and state(kala, -1) != (num, masa):
             out.append(fname)
     ayan = _ayanamsa(sunrise_jd)
     s_now = _norm(_sun_longitude(sunrise_jd) - ayan)
@@ -258,8 +271,46 @@ SIGNIFICANCE_HI = {
 }
 
 
+ALL_KATHAS = {
+    **{k: {**v, "category": "ekadashi"} for k, v in EKADASHI_KATHAS.items()},
+    **{k: {**v, "category": "festival"} for k, v in FESTIVAL_KATHAS.items()},
+    **{k: {**v, "category": "monthly"} for k, v in MONTHLY_KATHAS.items()},
+}
+
+
+def kathas_for(masa: str, tithis: List[int], festivals: List[str]) -> List[dict]:
+    """Vrat kathas to read on a day: festivals first, then the named Ekadashi, then monthly vratas."""
+    ids: List[str] = []
+    for f in festivals:
+        kid = FESTIVAL_TO_KATHA.get(f)
+        if kid and kid not in ids:
+            ids.append(kid)
+    month = "Adhika" if masa.startswith("Adhika") else masa
+    for tn in tithis:
+        if tn in (11, 26):
+            kid = EKADASHI_BY_AMANTA.get((month, "S" if tn == 11 else "K"))
+            if kid and kid not in ids:
+                ids.append(kid)
+    for tn in tithis:
+        monthly = {15: "satyanarayan", 13: "pradosh", 28: "pradosh", 19: "sankashti"}.get(tn)
+        if monthly and monthly not in ids:
+            ids.append(monthly)
+    return [{"id": k, "title": ALL_KATHAS[k]["title"], "title_hindi": ALL_KATHAS[k]["title_hi"]} for k in ids]
+
+
+FASTING_TITHIS = {"Ekadashi", "Chaturdashi", "Purnima", "Amavasya"}
+
+
 def add_hindi(p: dict) -> dict:
-    """Attach Hindi names for every displayed Panchang field (falls back to English)."""
+    """Attach Hindi names, kathas, and any kshaya (skipped) tithi observed on this day."""
+    jd = _julian_day(datetime.fromisoformat(p["sunrise_utc"]))
+    skip = skipped_tithi(jd, p["tithi_number"])
+    p["kshaya_tithi"] = _tithi_names(skip)[0] if skip else None
+    p["kshaya_tithi_hindi"] = _tithi_names(skip)[1] if skip else None
+    if skip:
+        p["observances"] = p["observances"] + [o for o in observances_for(skip) if o not in p["observances"]]
+        p["is_fasting_day"] = p["is_fasting_day"] or p["kshaya_tithi"] in FASTING_TITHIS
+    p["kathas"] = kathas_for(p["masa"], [p["tithi_number"]] + ([skip] if skip else []), p["festivals"])
     p["nakshatra_hindi"] = NAKSHATRA_HI.get(p["nakshatra"], p["nakshatra"])
     p["yoga_hindi"] = YOGA_HI.get(p.get("yoga") or "", p.get("yoga"))
     p["festivals_hindi"] = [FESTIVAL_HI.get(f, f) for f in p["festivals"]]
@@ -453,7 +504,51 @@ def _sunrise_utc(d: date, lat: float, lng: float) -> datetime:
 # ---------------------------------------------------------------------------
 
 
+class KathaRef(BaseModel):
+    id: str
+    title: str
+    title_hindi: str
+
+
+class Katha(KathaRef):
+    category: str  # ekadashi | festival | monthly
+    vidhi: str
+    vidhi_hindi: str
+    story: str
+    story_hindi: str
+
+
+def _katha_out(kid: str) -> Katha:
+    k = ALL_KATHAS[kid]
+    is_ek = k["category"] == "ekadashi"
+    return Katha(
+        id=kid, title=k["title"], title_hindi=k["title_hi"], category=k["category"],
+        vidhi=k.get("vidhi") or (EKADASHI_VIDHI if is_ek else ""),
+        vidhi_hindi=k.get("vidhi_hi") or (EKADASHI_VIDHI_HI if is_ek else ""),
+        story=k["story"], story_hindi=k["story_hi"],
+    )
+
+
+@api.get("/kathas", response_model=List[KathaRef])
+async def list_kathas(category: Optional[str] = Query(default=None, pattern="^(ekadashi|festival|monthly)$")):
+    return [
+        KathaRef(id=k, title=v["title"], title_hindi=v["title_hi"])
+        for k, v in ALL_KATHAS.items()
+        if category is None or v["category"] == category
+    ]
+
+
+@api.get("/kathas/{katha_id}", response_model=Katha)
+async def get_katha(katha_id: str):
+    if katha_id not in ALL_KATHAS:
+        raise HTTPException(status_code=404, detail="Katha not found")
+    return _katha_out(katha_id)
+
+
 class Panchang(BaseModel):
+    kathas: List[KathaRef]
+    kshaya_tithi: Optional[str] = None  # tithi that starts and ends between two sunrises (observed today)
+    kshaya_tithi_hindi: Optional[str] = None
     nakshatra_hindi: str
     yoga_hindi: Optional[str] = None
     festivals_hindi: List[str]

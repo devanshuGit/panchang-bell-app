@@ -12,8 +12,10 @@ import { useSettings } from "@/src/settings-context";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 
 type Mark = "ekadashi" | "purnima" | "amavasya" | null;
-const markOf = (p: Panchang): Mark =>
-  p.tithi === "Ekadashi" ? "ekadashi" : p.tithi === "Purnima" ? "purnima" : p.tithi === "Amavasya" ? "amavasya" : null;
+const markOf = (p: Panchang): Mark => {
+  const has = (n: string) => p.tithi === n || p.kshaya_tithi === n;
+  return has("Ekadashi") ? "ekadashi" : has("Purnima") ? "purnima" : has("Amavasya") ? "amavasya" : null;
+};
 
 export default function CalendarScreen() {
   const router = useRouter();
@@ -39,7 +41,7 @@ export default function CalendarScreen() {
   const festivals = useMemo(
     () =>
       days.filter(
-        (d) => d.festivals.length || ["Ekadashi", "Purnima", "Amavasya"].includes(d.tithi),
+        (d) => d.festivals.length || [d.tithi, d.kshaya_tithi].some((n) => n && ["Ekadashi", "Purnima", "Amavasya"].includes(n)),
       ),
     [days],
   );
@@ -142,7 +144,8 @@ export default function CalendarScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.listTitle}>
-                    {lp(d, lang).festivals[0] ?? `${lp(d, lang).tithi} ${t("vrat")}`}
+                    {lp(d, lang).festivals[0] ??
+                      `${d.kshaya_tithi && d.kathas.length ? (lang === "hi" ? d.kathas[0].title_hindi : d.kathas[0].title) : lp(d, lang).tithi} ${d.kshaya_tithi && d.kathas.length ? "" : t("vrat")}`}
                   </Text>
                   <Text style={styles.muted}>
                     {lp(d, lang).tithiFull} · {lp(d, lang).masa}
@@ -196,6 +199,7 @@ function Legend({ color, label, ring, star }: { color: string; label: string; ri
 
 function DayDetail({ p, lang }: { p: Panchang; lang: Lang }) {
   const l = lp(p, lang);
+  const router = useRouter();
   return (
     <View style={styles.detail} testID="calendar-day-detail">
       <Text style={styles.detailDate}>
@@ -208,6 +212,13 @@ function DayDetail({ p, lang }: { p: Panchang; lang: Lang }) {
         {l.paksha} · {l.masa} · {l.nakshatra} · {lang === "hi" ? "सूर्योदय" : "Sunrise"}{" "}
         {localizeTimes(sunriseLabel(p), lang)}
       </Text>
+      {p.kshaya_tithi ? (
+        <Text style={styles.muted} testID="calendar-kshaya-note">
+          {lang === "hi"
+            ? `${p.kshaya_tithi_hindi} आज सूर्योदय के बाद आरंभ होकर कल सूर्योदय से पहले समाप्त (क्षय तिथि) — आज मनाएँ।`
+            : `${p.kshaya_tithi} begins after sunrise and ends before tomorrow's sunrise (kshaya tithi) — observe today.`}
+        </Text>
+      ) : null}
       {[...l.festivals, ...l.observances].map((f) => (
         <View key={f} style={styles.detailTag}>
           <Feather name="star" size={12} color={colors.brandSecondary} />
@@ -215,6 +226,18 @@ function DayDetail({ p, lang }: { p: Panchang; lang: Lang }) {
         </View>
       ))}
       <Text style={styles.detailSig}>{l.significance}</Text>
+      {p.kathas.map((k) => (
+        <Pressable
+          key={k.id}
+          onPress={() => router.push({ pathname: "/katha/[id]", params: { id: k.id } })}
+          style={styles.kathaLink}
+          testID={`calendar-katha-${k.id}`}
+        >
+          <Feather name="book-open" size={14} color={colors.brandSecondary} />
+          <Text style={styles.kathaLinkText}>{lang === "hi" ? k.title_hindi : k.title}</Text>
+          <Feather name="chevron-right" size={16} color={colors.brandSecondary} />
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -279,6 +302,16 @@ const styles = StyleSheet.create({
   detailTag: { flexDirection: "row", alignItems: "center", gap: 6 },
   detailTagText: { color: colors.brandSecondary, fontFamily: fonts.bodyMedium, fontSize: 13 },
   detailSig: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 19, fontFamily: fonts.body },
+  kathaLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandTertiary,
+  },
+  kathaLinkText: { flex: 1, color: colors.onSurface, fontFamily: fonts.bodyMedium, fontSize: 14 },
   sectionTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 20, marginTop: spacing.xl, marginBottom: spacing.md },
   listRow: {
     flexDirection: "row",

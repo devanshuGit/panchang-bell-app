@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 4 (Vrat Kathas + Sound Credits). Backend: 42/42 pytest cases pass — the 28 prior Panchang/festival/alarm/settings regression tests still green, plus 14 new tests in /app/backend/tests/test_kathas_api.py covering GET /api/kathas (58 refs total; filtered counts ekadashi=26, festival=29, monthly=3; invalid category -> 422), GET /api/kathas/{id} (rama returns full English+Hindi vidhi/story and category=ekadashi, nirjala has its own water-less vidhi, diwali=festival, satyanarayan=monthly, unknown id -> 404), and Panchang/month 2026-11 integration: 2026-11-05 kathas==['rama']; 2026-11-08 kathas contains 'narak-chaturdashi' and 'diwali'; 2026-11-20 kshaya_tithi=='Ekadashi', festivals contains 'Dev Uthani Ekadashi', kathas contains 'devutthana', is_fasting_day==true; 2026-11-24 kathas contains 'kartik-purnima' and 'satyanarayan'. Frontend (web preview, 390x844): Home open-kathas-button opens /kathas and renders katha-section-ekadashi/festival/monthly with katha-item-rama tappable. katha/[id] shows katha-title ('Rama Ekadashi'), katha-vidhi, katha-story, katha-size-0/1/2 (font grows from 19px -> 23px between size-0 and size-2), katha-share-button and katha-back-button. Calendar: after tapping calendar-next-month, calendar-day-2026-11-05 opens calendar-day-detail with calendar-katha-rama link; calendar-day-2026-11-20 shows both calendar-kshaya-note ('Ekadashi begins after sunrise and ends before tomorrow's sunrise (kshaya tithi) — observe today.') and calendar-katha-devutthana. Settings exposes credits-section with credit-om (English text contains 'Tito', 'Om pro', 'CC BY-SA'; after switching language-hi the same block renders in Devanagari — 'ॐ जाप: “Om pro.ogg”, रचनाकार टीटो दत्ता (Tito Dutta), विकिमीडिया कॉमन्स, CC BY-SA 3.0...') and the credit-om-source / credit-om-license action buttons. Native-only reminder-tap NotificationRouter was skipped per instructions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_kathas_api.py",
+    "/app/backend/tests/test_panchang_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "No new blockers from this iteration. The pre-existing alarm-setup default-label-in-Hindi bug reported in iteration_3 (/app/frontend/app/alarm-setup.tsx:55) is still open and unrelated to this iteration's scope."
+  ],
+  "critical_code_review_comments": [
+    "server.py:274 ALL_KATHAS is built with ** spreading three dicts — if any id collided across modules the later one would silently win. Consider asserting key uniqueness at import time to catch accidental overlap when kathas are added.",
+    "kathas_for() in server.py appends festival kathas, then the Ekadashi (from EKADASHI_BY_AMANTA), then monthly vratas (satyanarayan/pradosh/sankashti). Dev Uthani Ekadashi gets its katha from the festival mapping ('Dev Uthani Ekadashi' -> is NOT in FESTIVAL_TO_KATHA actually), so the devutthana id comes from the Ekadashi lookup via the kshaya tithi path. Worth adding 'Dev Uthani Ekadashi': 'devutthana' and 'Nirjala Ekadashi': 'nirjala' etc. to FESTIVAL_TO_KATHA so that major Ekadashis called out in FESTIVALS always resolve by name, not only via the tithi number — makes the code easier to reason about.",
+    "Kshaya-tithi detection skipped_tithi() only compares sunrise-to-sunrise tithi numbers; good enough for the common case but it will miss a kshaya that straddles midnight if the online source clamps the tithi value. A unit test around skipped_tithi for a known 2026 case (e.g. the Nov 20 Ekadashi) would guard against future regressions.",
+    "/app/backend/kathas_festivals.py keeps vidhi/story inline as module-level string literals (~250 lines); fine today, but if more languages are added, consider loading from JSON/YAML for easier translation review."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_kathas_api.py"
+  ],
+  "success_rate": {
+    "backend": "100% (42/42 pytest including 14 new kathas/kshaya cases)",
+    "frontend": "100% of in-scope flows (kathas library, katha detail incl. font-size + Hindi, calendar Nov 5 rama & Nov 20 kshaya+devutthana, Settings credits section EN+HI)"
+  },
+  "seed_data_creation": "None. Tests create/delete a TEST_ alarm and restore settings as before.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend regression now lives in two files: /app/backend/tests/test_panchang_api.py (28 cases) and /app/backend/tests/test_kathas_api.py (14 cases). Run both with `pytest /app/backend/tests -v --junitxml=/app/test_reports/pytest/pytest_results.xml`. For katha UI: Home has open-kathas-button that routes to /kathas (sections katha-section-{ekadashi|festival|monthly}, rows katha-item-{id}); /katha/[id] exposes katha-title/vidhi/story/size-0/1/2/share-button/back-button. Calendar day detail renders calendar-katha-{id} per katha and calendar-kshaya-note when kshaya_tithi is set. Container date 2026-10-21 so to see katha-day flows in the calendar you must tap calendar-next-month once and then calendar-day-2026-11-05 (rama) or 2026-11-20 (kshaya Ekadashi + devutthana). Settings credits-section has credit-om text + credit-om-source and credit-om-license buttons. Native-only expo-notifications tap->router flow is not reachable from web.",
+  "rca_of_issue": "N/A — all tested features working as specified."
+}

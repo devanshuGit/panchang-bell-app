@@ -43,6 +43,12 @@ Astronomical Tithi/Nakshatra computation (simplified Meeus) — no external API 
 - Hindi mode: full UI in Hindi via `src/i18n.ts` + `SettingsProvider` (`src/settings-context.tsx`); follows phone language until user picks हिन्दी/English in Settings. Backend adds nakshatra_hindi, yoga_hindi, festivals_hindi, observances_hindi, significance_hindi. Times shown as सुबह/दोपहर/शाम/रात. Notifications and share card follow the language.
 - Fixes: Hindi default alarm label; back buttons work when a screen is opened directly.
 
+## Iteration 4 (Oct 2026) — done, 42/42 backend tests + frontend flows pass
+- Vrat Katha: 58 short retellings in English + Hindi (26 Ekadashi incl. Adhika, 29 festivals, 3 monthly: Satyanarayan, Pradosh, Sankashti) in `backend/kathas_ekadashi.py`, `kathas_festivals.py`; Ekadashi named by amanta masa + paksha. `GET /api/kathas`, `/api/kathas/{id}`; Panchang carries `kathas[]`.
+- Screens: `app/kathas.tsx` (library), `app/katha/[id].tsx` (reader, text size, share). Links from Home card + Calendar day detail; tapping a reminder opens its katha (native only).
+- Kshaya (skipped) tithi handling: a tithi that starts and ends between two sunrises is observed that day (e.g. Dev Uthani Ekadashi 2026-11-20).
+- Credits section in Settings: Om pro.ogg by Tito Dutta (CC BY-SA 3.0, changes noted, source + licence links), bell, Panchang, kathas.
+
 ## Next ideas
 - Offline-first alarms (persist in SecureStore, reschedule on boot).
 - Monthly festival calendar (Diwali, Shivratri, Ekadashi vrat list).

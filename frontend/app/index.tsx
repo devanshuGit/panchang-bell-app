@@ -182,6 +182,7 @@ function Header({
   testID?: string;
 }) {
   const { lang, t } = useSettings();
+  const router = useRouter();
   const today = new Date().toLocaleDateString(localeOf(lang), {
     weekday: "long",
     day: "numeric",
@@ -199,6 +200,7 @@ function Header({
       </View>
       <View style={styles.headerActions}>
         {[
+          { icon: "book-open" as const, onPress: () => router.push("/kathas"), id: "open-kathas-button" },
           { icon: "calendar" as const, onPress: onCalendar, id: "open-calendar-button" },
           { icon: "share-2" as const, onPress: onShare, id: "open-share-button" },
           { icon: "settings" as const, onPress: onSettings, id: "open-settings-button" },
@@ -219,6 +221,7 @@ function Header({
 
 function TithiCard({ panchang, loading }: { panchang?: Panchang; loading: boolean }) {
   const { lang, t } = useSettings();
+  const router = useRouter();
   const l = panchang ? lp(panchang, lang) : null;
   return (
     <View style={styles.cardWrap} testID="tithi-card">
@@ -287,6 +290,21 @@ function TithiCard({ panchang, loading }: { panchang?: Panchang; loading: boolea
                   <Text style={styles.fastingBadgeText}>{t("fastingDay")}</Text>
                 </View>
               ) : null}
+              {panchang.kathas.map((k) => (
+                <Pressable
+                  key={k.id}
+                  onPress={() => router.push({ pathname: "/katha/[id]", params: { id: k.id } })}
+                  style={({ pressed }) => [styles.kathaBtn, pressed && { opacity: 0.8 }]}
+                  testID={`today-katha-${k.id}`}
+                >
+                  <Feather name="book-open" size={16} color={colors.brandSecondary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.kathaBtnLabel}>{t("readKatha")}</Text>
+                    <Text style={styles.kathaBtnTitle}>{lang === "hi" ? k.title_hindi : k.title}</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={colors.brandSecondary} />
+                </Pressable>
+              ))}
             </>
           )}
         </View>
@@ -452,6 +470,19 @@ function AddButton({ bottom, onPress }: { bottom: number; onPress: () => void })
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   headerActions: { flexDirection: "row", gap: spacing.sm },
+  kathaBtn: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.brandPrimary,
+    backgroundColor: colors.brandTertiary,
+  },
+  kathaBtnLabel: { color: colors.brandSecondary, fontFamily: fonts.bodyBold, fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase" },
+  kathaBtnTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 16, marginTop: 2 },
   eveningCard: {
     flexDirection: "row",
     alignItems: "center",

@@ -10,7 +10,19 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export type KathaRef = { id: string; title: string; title_hindi: string };
+export type Katha = KathaRef & {
+  category: "ekadashi" | "festival" | "monthly";
+  vidhi: string;
+  vidhi_hindi: string;
+  story: string;
+  story_hindi: string;
+};
+
 export type Panchang = {
+  kathas: KathaRef[];
+  kshaya_tithi?: string | null;
+  kshaya_tithi_hindi?: string | null;
   nakshatra_hindi: string;
   yoga_hindi?: string | null;
   festivals_hindi: string[];
@@ -58,6 +70,9 @@ export const api = {
     req<Panchang[]>(`/panchang/range?lat=${lat}&lng=${lng}&start=${start}&days=${days}`),
   getMonth: (lat: number, lng: number, year: number, month: number) =>
     req<Panchang[]>(`/panchang/month?lat=${lat}&lng=${lng}&year=${year}&month=${month}`),
+  listKathas: (category?: Katha["category"]) =>
+    req<KathaRef[]>(`/kathas${category ? `?category=${category}` : ""}`),
+  getKatha: (id: string) => req<Katha>(`/kathas/${encodeURIComponent(id)}`),
   listAlarms: () => req<Alarm[]>("/alarms"),
   createAlarm: (data: Omit<Alarm, "id" | "created_at">) =>
     req<Alarm>("/alarms", { method: "POST", body: JSON.stringify(data) }),

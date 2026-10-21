@@ -3,6 +3,7 @@ import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -256,6 +257,34 @@ export default function Settings() {
           </View>
         </Pressable>
 
+        <Text style={styles.sectionLabel}>{t("credits")}</Text>
+        <View style={styles.card} testID="credits-section">
+          <View style={{ gap: spacing.sm }}>
+            <Text style={styles.creditText} testID="credit-om">{t("omCredit")}</Text>
+            <View style={styles.btnRow}>
+              <Pressable
+                style={styles.outlineBtn}
+                onPress={() => Linking.openURL("https://commons.wikimedia.org/wiki/File:Om_pro.ogg")}
+                testID="credit-om-source"
+              >
+                <Feather name="external-link" size={14} color={colors.brandSecondary} />
+                <Text style={styles.outlineBtnText}>{t("viewSource")}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.outlineBtn}
+                onPress={() => Linking.openURL("https://creativecommons.org/licenses/by-sa/3.0/")}
+                testID="credit-om-license"
+              >
+                <Feather name="file-text" size={14} color={colors.brandSecondary} />
+                <Text style={styles.outlineBtnText}>{t("viewLicense")}</Text>
+              </Pressable>
+            </View>
+          </View>
+          <Text style={styles.creditText}>{t("bellCredit")}</Text>
+          <Text style={styles.creditText}>{t("panchangCredit")}</Text>
+          <Text style={styles.creditText}>{t("kathaCredit")}</Text>
+        </View>
+
         <Text style={styles.footer}>ॐ शान्तिः शान्तिः शान्तिः</Text>
       </ScrollView>
     </View>
@@ -263,6 +292,7 @@ export default function Settings() {
 }
 
 const styles = StyleSheet.create({
+  creditText: { color: colors.onSurfaceSecondary, fontFamily: fonts.body, fontSize: 12, lineHeight: 18 },
   segment: {
     flexDirection: "row",
     padding: spacing.xs,

@@ -71,7 +71,7 @@ export async function syncAlarmSchedules(alarms: Alarm[], upcoming: Panchang[], 
   if (opts.evening.enabled) {
     for (const p of upcoming) {
       if (budget <= 0) break;
-      if (!p.festivals.length && !EVENING_TITHIS.has(p.tithi)) continue;
+      if (!p.festivals.length && !EVENING_TITHIS.has(p.tithi) && !EVENING_TITHIS.has(p.kshaya_tithi ?? "")) continue;
       const when = fromISODate(p.date, opts.evening.hour, opts.evening.minute);
       when.setDate(when.getDate() - 1);
       if (when.getTime() <= now) continue;
@@ -83,7 +83,7 @@ export async function syncAlarmSchedules(alarms: Alarm[], upcoming: Panchang[], 
           title: `🪔 ${translate(lang, "tomorrow")}: ${headline}`,
           body: `${l.tithiFull}, ${l.masa}. ${l.significance} ${translate(lang, "prepare")}`,
           sound: SOUND_FILES[opts.evening.sound] ?? "default",
-          data: { date: p.date, type: "evening-before" },
+          data: { date: p.date, type: "evening-before", kathaId: p.kathas[0]?.id },
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -111,9 +111,11 @@ export async function syncAlarmSchedules(alarms: Alarm[], upcoming: Panchang[], 
         identifier: `${alarm.id}-${p.date}`,
         content: {
           title: `ॐ ${p.tithi_hindi} · ${lang === "hi" ? l.paksha : p.tithi}`,
-          body: `${l.paksha}, ${l.masa}${highlight ? ` · ${highlight}` : ""}. ${l.significance}`,
+          body: `${l.paksha}, ${l.masa}${highlight ? ` · ${highlight}` : ""}. ${l.significance}${
+            p.kathas.length ? ` ${translate(lang, "kathaInApp")}` : ""
+          }`,
           sound: SOUND_FILES[alarm.sound] ?? "default",
-          data: { alarmId: alarm.id, date: p.date, type: "tithi-alarm" },
+          data: { alarmId: alarm.id, date: p.date, type: "tithi-alarm", kathaId: p.kathas[0]?.id },
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
