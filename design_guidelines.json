@@ -1,0 +1,131 @@
+{
+  "app_name": "Tithi Alarm Panchang",
+  "personality": "6 Glass / Luxe DARK",
+  "personality_one_liner": "A sacred, calm, and respectful digital space evoking the peace of a temple at dawn, using cinematic depth and glowing marigold accents over deep indigo night.",
+  "color": {
+    "surface": "#0B0F19",
+    "onSurface": "#F9F5EC",
+    "surfaceSecondary": "#151B2B",
+    "onSurfaceSecondary": "#E2E8F0",
+    "surfaceTertiary": "#1E2538",
+    "onSurfaceTertiary": "#CBD5E1",
+    "surfaceInverse": "#F9F5EC",
+    "onSurfaceInverse": "#0B0F19",
+    "brand": "#F59E0B",
+    "brandPrimary": "#D97706",
+    "onBrandPrimary": "#F9F5EC",
+    "brandSecondary": "#FCD34D",
+    "onBrandSecondary": "#451A03",
+    "brandTertiary": "#451A03",
+    "onBrandTertiary": "#FCD34D",
+    "success": "#10B981",
+    "onSuccess": "#064E3B",
+    "warning": "#F59E0B",
+    "onWarning": "#451A03",
+    "error": "#EF4444",
+    "onError": "#450A0A",
+    "info": "#EAB308",
+    "onInfo": "#422006",
+    "border": "#1E2538",
+    "borderStrong": "#334155",
+    "divider": "#1E2538",
+    "muted": "#94A3B8",
+    "onBrand": "#F9F5EC"
+  },
+  "typography": {
+    "displayFontFamily": "Cormorant Garamond",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room for a calm, editorial feel. Use md for inner padding and xl for outer screen padding to give the sacred content space.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "stack_only",
+  "icon_set": "Feather",
+  "glassmorphism": {
+    "enabled": "true",
+    "do's": [
+      "Use blur/glass on bottom sheet headers and sticky headers over scrolling content.",
+      "Use frosted glass over the starry night background for featured Tithi cards.",
+      "Ensure readability by adding a ≥75% surfaceSecondary tint underneath text on glass."
+    ],
+    "dont's": [
+      "Don't apply glass to every single list row or form input."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "Displays today's Tithi, Nakshatra, Sunrise, and current active alarms over a calming animated background.",
+      "states": {
+        "loading": "Centered glowing Om symbol pulsing.",
+        "empty": "No upcoming alarms. Show a serene illustration or text prompting to add a sacred alarm.",
+        "error": "Unable to fetch Panchang data. Show localized location-error state and a retry button."
+      },
+      "layout": "Root container has a background image (starry night) + Reanimated floating Om layer. Overlaid is a Glass-morphism card showing Today's Tithi & significance (Serif font for Tithi name). Below it, a list of scheduled alarms. Bottom sticky CTA to 'Add Alarm'."
+    },
+    {
+      "name": "AlarmSetup",
+      "purpose": "Allows users to schedule an alarm, choose the chant sound (Om/Bell), and toggle location.",
+      "states": {
+        "loading": "Standard spinner.",
+        "empty": "N/A",
+        "error": "Error saving alarm."
+      },
+      "layout": "Bottom sheet or full modal. Elegant time picker, segmented controls for Sound (Om Chant, Temple Bell, Custom). Location toggle for accurate local Panchang. Sticky 'Save' button at bottom."
+    }
+  ],
+  "images": {
+    "background_night_sky": {
+      "url": "https://images.unsplash.com/photo-1475274047050-1d0c0975c63e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzR8MHwxfHNlYXJjaHwxfHxkYXJrJTIwaW5kaWdvJTIwbmlnaHQlMjBza3klMjBzdGFyc3xlbnwwfHx8fDE3OTE1NDQwMzN8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Dark indigo night sky with stars, representing dawn/temple atmosphere"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the color palette: Deep Indigo night background with Marigold/Saffron text and glowing highlights. Do NOT use standard purple/indigo generic AI themes.",
+    "Implement the 'Floating Om animation background' using `react-native-reanimated`. Render the Om (ॐ) character in a large serif font, slowly translating (floating up/down) and gently scaling/fading (opacity 5%-15%) in the absolute background.",
+    "For the Tithi cards, use `expo-blur` to create a cinematic frosted glass effect over the background night sky image. Apply the required gradient scrim (top to bottom) if placing text directly over the image.",
+    "Use Cormorant Garamond (or another elegant serif) for all spiritual terms (Ekadashi, Tithi names, Om) to evoke reverence and tradition.",
+    "Ensure 'Today's Panchang' details (Nakshatra, Sunrise) are displayed cleanly in the secondary Sans-Serif font for high legibility.",
+    "Avoid all default blue colors, replace with the Marigold (#F59E0B) or Gold (#FCD34D) accents from the palette."
+  ],
+  "haptics": {
+    "events": {
+      "primary_button_press": "impactMedium",
+      "alarm_toggle": "impactLight",
+      "time_picker_scroll": "selection"
+    }
+  }
+}
