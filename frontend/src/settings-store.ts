@@ -1,5 +1,5 @@
 // Simple persisted store for user settings (location, default sound).
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { storage } from "@/src/utils/storage";
 
 const KEY = "panchang-settings-v1";
 
@@ -20,9 +20,9 @@ export const defaultSettings: UserSettings = {
 };
 
 export async function loadSettings(): Promise<UserSettings> {
+  const raw = await storage.getItem(KEY, null);
+  if (typeof raw !== "string") return defaultSettings;
   try {
-    const raw = await AsyncStorage.getItem(KEY);
-    if (!raw) return defaultSettings;
     return { ...defaultSettings, ...JSON.parse(raw) };
   } catch {
     return defaultSettings;
@@ -30,5 +30,6 @@ export async function loadSettings(): Promise<UserSettings> {
 }
 
 export async function saveSettings(s: UserSettings): Promise<void> {
-  await AsyncStorage.setItem(KEY, JSON.stringify(s));
+  // storage only accepts primitives, so the settings object is stored as a JSON string
+  await storage.setItem(KEY, JSON.stringify(s));
 }

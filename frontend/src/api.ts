@@ -11,6 +11,16 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export type Panchang = {
+  masa: string;
+  masa_hindi: string;
+  festivals: string[];
+  observances: string[];
+  source: "online" | "calculated";
+  sunrise?: string | null;
+  sunset?: string | null;
+  yoga?: string | null;
+  karana?: string | null;
+  rahu_kalam?: string | null;
   date: string;
   tithi: string;
   tithi_hindi: string;
@@ -39,7 +49,10 @@ export type Alarm = {
 export const api = {
   getPanchang: (lat: number, lng: number, date?: string) =>
     req<Panchang>(`/panchang?lat=${lat}&lng=${lng}${date ? `&date=${date}` : ""}`),
-  getWeek: (lat: number, lng: number) => req<Panchang[]>(`/panchang/week?lat=${lat}&lng=${lng}`),
+  getRange: (lat: number, lng: number, start: string, days: number) =>
+    req<Panchang[]>(`/panchang/range?lat=${lat}&lng=${lng}&start=${start}&days=${days}`),
+  getMonth: (lat: number, lng: number, year: number, month: number) =>
+    req<Panchang[]>(`/panchang/month?lat=${lat}&lng=${lng}&year=${year}&month=${month}`),
   listAlarms: () => req<Alarm[]>("/alarms"),
   createAlarm: (data: Omit<Alarm, "id" | "created_at">) =>
     req<Alarm>("/alarms", { method: "POST", body: JSON.stringify(data) }),

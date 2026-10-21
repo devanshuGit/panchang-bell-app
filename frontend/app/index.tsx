@@ -4,8 +4,8 @@ import { BlurView } from "expo-blur";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
-import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -21,7 +21,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type Alarm, type Panchang } from "@/src/api";
 import { FloatingOm } from "@/src/components/floating-om";
-import { ensureChannel, ensureNotificationPermission } from "@/src/notifications";
+import { fromISODate, sunriseLabel, toISODate } from "@/src/date";
+import {
+  ensureChannel,
+  ensureNotificationPermission,
+  syncAlarmSchedules,
+} from "@/src/notifications";
 import { defaultSettings, loadSettings, saveSettings } from "@/src/settings-store";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 
@@ -35,12 +40,20 @@ export default function Home() {
   const [coords, setCoords] = useState({ lat: defaultSettings.lat, lng: defaultSettings.lng });
   const [city, setCity] = useState(defaultSettings.city);
 
-  // Load settings, request location + notification permissions.
+  // Re-read saved location whenever Home regains focus (e.g. after Settings).
+  useFocusEffect(
+    useCallback(() => {
+      loadSettings().then((s) => {
+        setCoords((c) => (c.lat === s.lat && c.lng === s.lng ? c : { lat: s.lat, lng: s.lng }));
+        setCity(s.city);
+      });
+    }, []),
+  );
+
+  // Request location + notification permissions once.
   useEffect(() => {
     (async () => {
       const s = await loadSettings();
-      setCoords({ lat: s.lat, lng: s.lng });
-      setCity(s.city);
       await ensureNotificationPermission();
       await ensureChannel();
       if (s.useDeviceLocation && Platform.OS !== "web") {
@@ -71,17 +84,25 @@ export default function Home() {
     })();
   }, []);
 
+  const today = toISODate(new Date());
   const panchangQ = useQuery({
-    queryKey: ["panchang", coords.lat, coords.lng],
-    queryFn: () => api.getPanchang(coords.lat, coords.lng),
+    queryKey: ["panchang", coords.lat, coords.lng, today],
+    queryFn: () => api.getPanchang(coords.lat, coords.lng, today),
   });
 
-  const weekQ = useQuery({
-    queryKey: ["panchang-week", coords.lat, coords.lng],
-    queryFn: () => api.getWeek(coords.lat, coords.lng),
+  // 30 days ahead: drives the week strip and the dated alarm notifications.
+  const rangeQ = useQuery({
+    queryKey: ["panchang-range", coords.lat, coords.lng, today],
+    queryFn: () => api.getRange(coords.lat, coords.lng, today, 30),
   });
 
   const alarmsQ = useQuery({ queryKey: ["alarms"], queryFn: api.listAlarms });
+
+  useEffect(() => {
+    if (alarmsQ.data && rangeQ.data) {
+      syncAlarmSchedules(alarmsQ.data, rangeQ.data).catch((e) => console.warn("sync failed", e));
+    }
+  }, [alarmsQ.data, rangeQ.data]);
 
   const refreshing = panchangQ.isRefetching || alarmsQ.isRefetching;
 
@@ -106,7 +127,7 @@ export default function Home() {
             refreshing={refreshing}
             onRefresh={() => {
               qc.invalidateQueries({ queryKey: ["panchang"] });
-              qc.invalidateQueries({ queryKey: ["panchang-week"] });
+              qc.invalidateQueries({ queryKey: ["panchang-range"] });
               qc.invalidateQueries({ queryKey: ["alarms"] });
             }}
             tintColor={colors.brandSecondary}
@@ -116,16 +137,23 @@ export default function Home() {
         <Header
           city={city}
           onSettings={() => router.push("/settings")}
+          onCalendar={() => router.push("/calendar")}
+          onShare={() => router.push("/share")}
           testID="header"
         />
         <TithiCard panchang={panchangQ.data} loading={panchangQ.isLoading} />
-        <WeekStrip week={weekQ.data} />
+        <WeekStrip week={rangeQ.data?.slice(0, 7)} />
         <AlarmsSection
           alarms={alarmsQ.data || []}
           loading={alarmsQ.isLoading}
           onAdd={() => router.push("/alarm-setup")}
           onEdit={(a) => router.push({ pathname: "/alarm-setup", params: { id: a.id } })}
         />
+        <Text style={styles.attribution} testID="panchang-attribution">
+          {panchangQ.data?.source === "calculated"
+            ? "Panchang calculated on-device from sun & moon positions (offline)"
+            : "Panchang data: Nitya Panchangam (CC-BY 4.0) · Lahiri ayanamsa"}
+        </Text>
       </ScrollView>
 
       <AddButton bottom={insets.bottom + spacing.lg} onPress={() => router.push("/alarm-setup")} />
@@ -136,10 +164,14 @@ export default function Home() {
 function Header({
   city,
   onSettings,
+  onCalendar,
+  onShare,
   testID,
 }: {
   city: string;
   onSettings: () => void;
+  onCalendar: () => void;
+  onShare: () => void;
   testID?: string;
 }) {
   const today = new Date().toLocaleDateString(undefined, {
@@ -157,13 +189,22 @@ function Header({
           <Text style={styles.city}>{city}</Text>
         </View>
       </View>
-      <Pressable
-        onPress={onSettings}
-        style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.7 }]}
-        testID="open-settings-button"
-      >
-        <Feather name="settings" size={20} color={colors.onSurface} />
-      </Pressable>
+      <View style={styles.headerActions}>
+        {[
+          { icon: "calendar" as const, onPress: onCalendar, id: "open-calendar-button" },
+          { icon: "share-2" as const, onPress: onShare, id: "open-share-button" },
+          { icon: "settings" as const, onPress: onSettings, id: "open-settings-button" },
+        ].map((b) => (
+          <Pressable
+            key={b.id}
+            onPress={b.onPress}
+            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.7 }]}
+            testID={b.id}
+          >
+            <Feather name={b.icon} size={19} color={colors.onSurface} />
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
@@ -180,8 +221,17 @@ function TithiCard({ panchang, loading }: { panchang?: Panchang; loading: boolea
             <ActivityIndicator color={colors.brandSecondary} style={{ marginTop: spacing.xl }} />
           ) : (
             <>
-              <Text style={styles.tithiNameHi}>{panchang.tithi_hindi}</Text>
-              <Text style={styles.tithiNameEn}>{panchang.tithi}</Text>
+              <Text style={styles.tithiNameHi} testID="today-tithi-hindi">{panchang.tithi_hindi}</Text>
+              <Text style={styles.tithiNameEn} testID="today-tithi-name">{panchang.tithi}</Text>
+              <Text style={styles.masaLine} testID="today-masa">
+                {panchang.masa_hindi} मास · {panchang.masa}
+              </Text>
+              {panchang.festivals.length > 0 ? (
+                <View style={styles.festivalBanner} testID="today-festival">
+                  <Feather name="star" size={14} color={colors.onBrandSecondary} />
+                  <Text style={styles.festivalText}>{panchang.festivals.join(" · ")}</Text>
+                </View>
+              ) : null}
               <View style={styles.progressBarBg}>
                 <View
                   style={[styles.progressBarFg, { width: `${Math.min(panchang.progress_pct, 100)}%` }]}
@@ -193,11 +243,16 @@ function TithiCard({ panchang, loading }: { panchang?: Panchang; loading: boolea
 
               <View style={styles.row}>
                 <InfoCell label="Nakshatra" value={panchang.nakshatra} />
-                <InfoCell
-                  label="Sunrise"
-                  value={formatSunrise(panchang.sunrise_utc)}
-                />
+                <InfoCell label="Sunrise" value={sunriseLabel(panchang)} />
               </View>
+              {panchang.yoga || panchang.rahu_kalam ? (
+                <View style={[styles.row, { marginTop: spacing.md }]}>
+                  {panchang.yoga ? <InfoCell label="Yoga" value={panchang.yoga} /> : null}
+                  {panchang.rahu_kalam ? (
+                    <InfoCell label="Rahu Kaal" value={panchang.rahu_kalam} />
+                  ) : null}
+                </View>
+              ) : null}
 
               <View style={styles.significance}>
                 <Feather
@@ -250,12 +305,16 @@ function WeekStrip({ week }: { week?: Panchang[] }) {
             testID={`day-chip-${idx}`}
           >
             <Text style={[styles.dayChipDate, idx === 0 && styles.dayChipDateActive]}>
-              {new Date(p.date).toLocaleDateString(undefined, {
+              {fromISODate(p.date).toLocaleDateString(undefined, {
                 weekday: "short",
                 day: "numeric",
               })}
             </Text>
-            <Text style={[styles.dayChipTithi, idx === 0 && styles.dayChipTithiActive]}>
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              style={[styles.dayChipTithi, idx === 0 && styles.dayChipTithiActive]}
+            >
               {p.tithi}
             </Text>
             <Text style={styles.dayChipPaksha}>
@@ -289,7 +348,7 @@ function AlarmsSection({
           <Feather name="bell" size={28} color={colors.brandSecondary} />
           <Text style={styles.emptyTitle}>No alarms yet</Text>
           <Text style={styles.emptySub}>
-            Set a sacred morning reminder for today's Tithi.
+            Set a sacred morning reminder for today’s Tithi.
           </Text>
         </Pressable>
       ) : (
@@ -374,17 +433,39 @@ function AddButton({ bottom, onPress }: { bottom: number; onPress: () => void })
   );
 }
 
-function formatSunrise(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
+  headerActions: { flexDirection: "row", gap: spacing.sm },
+  masaLine: {
+    color: colors.muted,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    marginTop: spacing.xs,
+  },
+  festivalBanner: {
+    marginTop: spacing.md,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.brandSecondary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+  },
+  festivalText: {
+    color: colors.onBrandSecondary,
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+    flexShrink: 1,
+  },
+  attribution: {
+    color: colors.muted,
+    fontFamily: fonts.body,
+    fontSize: 11,
+    textAlign: "center",
+    marginTop: spacing.xl,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -526,7 +607,7 @@ const styles = StyleSheet.create({
   },
   dayChip: {
     flexShrink: 0,
-    width: 92,
+    width: 108,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.md,
     padding: spacing.md,

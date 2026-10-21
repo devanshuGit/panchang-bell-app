@@ -52,9 +52,17 @@
       "expo-status-bar",
       "expo-audio",
       "expo-location",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "color": "#D97706",
+          "sounds": ["./assets/sounds/om.wav", "./assets/sounds/bell.wav"]
+        }
+      ],
       "@react-native-community/datetimepicker",
-      "@react-native-vector-icons/feather"
+      "@react-native-vector-icons/feather",
+      "expo-sharing",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

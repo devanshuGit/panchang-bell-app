@@ -29,6 +29,15 @@ Astronomical Tithi/Nakshatra computation (simplified Meeus) — no external API 
 - Preview sounds are streamed URLs; the notification itself uses the system default sound.
 - Astronomical calc is accurate within ~0.3° (tithi boundary within ~5–10 minutes).
 
+## Iteration 2 (Oct 2026) — done, 25/25 backend tests + frontend flows pass
+- Online Panchang: Nitya Panchangam (CC-BY, `PANCHANG_API_URL`), cached in Mongo `panchang_cache`; astronomical fallback. Adds local sunrise/sunset, yoga, karana, Rahu Kaal.
+- Masa (amanta, adhika detection) + ~35 major festivals assigned by traditional kala (sunrise/midday/afternoon/pradosh/midnight) + Sankranti + monthly vratas. Endpoints `/api/panchang/range`, `/api/panchang/month`.
+- Festival Calendar screen (`app/calendar.tsx`): month grid, Ekadashi/Purnima/Amavasya/festival marks, day detail, month list.
+- Share screen (`app/share.tsx`): image card via react-native-view-shot + expo-sharing; text share fallback.
+- Om/Bell alarm sounds bundled (`assets/sounds/om.wav`, `bell.wav`) via expo-notifications plugin; per-sound Android channels. Om = Wikimedia "Om pro.ogg" (Tito Dutta, CC BY-SA 3.0) over synthesized drone; bell synthesized.
+- Reminders now dated per day (next 30 days, ≤60 pending) with that day's Tithi + festival in the notification; respects repeat days and enable toggle; rescheduled on every Home load.
+- Known: custom sounds only in installed builds (Expo Go = default sound); reminders stop if app unopened 30 days; Holika Dahan 2026 shows Mar 2 (commonly Mar 3).
+
 ## Next ideas
 - Offline-first alarms (persist in SecureStore, reschedule on boot).
 - Monthly festival calendar (Diwali, Shivratri, Ekadashi vrat list).

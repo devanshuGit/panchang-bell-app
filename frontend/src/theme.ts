@@ -1,6 +1,6 @@
 // Dark luxe theme for the Panchang Alarm app, filled from design_guidelines.json.
 import { useMemo } from "react";
-import { Appearance, Platform, StyleSheet, useColorScheme } from "react-native";
+import { Appearance, StyleSheet, useColorScheme } from "react-native";
 
 export type ColorScheme = "light" | "dark";
 

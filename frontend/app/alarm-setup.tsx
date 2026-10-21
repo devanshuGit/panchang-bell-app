@@ -17,33 +17,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, type Alarm } from "@/src/api";
-import {
-  cancelNotification,
-  ensureNotificationPermission,
-  scheduleDailyTithi,
-} from "@/src/notifications";
+import { api } from "@/src/api";
+import { ensureNotificationPermission } from "@/src/notifications";
+import { loadSettings } from "@/src/settings-store";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 
 const SOUNDS = [
-  {
-    key: "om",
-    label: "Om Chant",
-    hindi: "ॐ",
-    url: "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8e8e3c7a3.mp3",
-  },
-  {
-    key: "bell",
-    label: "Temple Bell",
-    hindi: "🔔",
-    url: "https://cdn.pixabay.com/download/audio/2022/02/23/audio_c1caa3f6ed.mp3",
-  },
-  {
-    key: "default",
-    label: "System Default",
-    hindi: "🔊",
-    url: null as string | null,
-  },
+  { key: "om", label: "Om Chant", hindi: "ॐ", file: require("../assets/sounds/om.wav") },
+  { key: "bell", label: "Temple Bell", hindi: "🔔", file: require("../assets/sounds/bell.wav") },
+  { key: "default", label: "System Default", hindi: "🔊", file: null },
 ];
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -85,20 +67,20 @@ export default function AlarmSetup() {
     }
   }, [existing]);
 
-  const previewSound = async (key: string) => {
+  useEffect(() => {
+    if (!id) loadSettings().then((s) => setSound(s.defaultSound));
+  }, [id]);
+
+  const playerRef = React.useRef<ReturnType<typeof createAudioPlayer> | null>(null);
+  useEffect(() => () => playerRef.current?.remove(), []);
+
+  const previewSound = (key: string) => {
     const s = SOUNDS.find((x) => x.key === key);
-    if (!s?.url) return;
-    try {
-      const player = createAudioPlayer({ uri: s.url });
-      player.play();
-      setTimeout(() => {
-        try {
-          player.remove();
-        } catch {}
-      }, 4000);
-    } catch (e) {
-      console.warn("preview failed", e);
-    }
+    if (!s?.file) return;
+    playerRef.current?.remove();
+    const player = createAudioPlayer(s.file);
+    playerRef.current = player;
+    player.play();
   };
 
   const toggleDay = (idx: number) =>
@@ -106,45 +88,22 @@ export default function AlarmSetup() {
       prev.includes(idx) ? prev.filter((d) => d !== idx) : [...prev, idx].sort(),
     );
 
+  // Notifications are (re)scheduled by the home screen whenever the alarm list changes.
   const save = async () => {
     setSaving(true);
     try {
-      const granted = await ensureNotificationPermission();
-      let notifId: string | null = null;
-      let saved: Alarm;
-      if (existing) {
-        await cancelNotification(existing.notification_id ?? existing.id);
-        saved = await api.updateAlarm(existing.id, {
-          label,
-          hour: time.getHours(),
-          minute: time.getMinutes(),
-          sound,
-          days,
-          enabled: true,
-        });
-      } else {
-        saved = await api.createAlarm({
-          label,
-          hour: time.getHours(),
-          minute: time.getMinutes(),
-          sound,
-          days,
-          enabled: true,
-          notification_id: null,
-        });
-      }
-      if (granted) {
-        notifId = await scheduleDailyTithi(
-          time.getHours(),
-          time.getMinutes(),
-          label,
-          saved.id,
-        );
-        if (notifId) {
-          await api.updateAlarm(saved.id, { notification_id: notifId });
-        }
-      }
-      qc.invalidateQueries({ queryKey: ["alarms"] });
+      await ensureNotificationPermission();
+      const data = {
+        label,
+        hour: time.getHours(),
+        minute: time.getMinutes(),
+        sound,
+        days,
+        enabled: true,
+      };
+      if (existing) await api.updateAlarm(existing.id, data);
+      else await api.createAlarm({ ...data, notification_id: null });
+      await qc.invalidateQueries({ queryKey: ["alarms"] });
       router.back();
     } catch (e) {
       console.warn("save failed", e);
@@ -157,9 +116,8 @@ export default function AlarmSetup() {
     if (!existing) return;
     setSaving(true);
     try {
-      await cancelNotification(existing.notification_id ?? existing.id);
       await api.deleteAlarm(existing.id);
-      qc.invalidateQueries({ queryKey: ["alarms"] });
+      await qc.invalidateQueries({ queryKey: ["alarms"] });
       router.back();
     } finally {
       setSaving(false);
@@ -276,7 +234,7 @@ export default function AlarmSetup() {
               <Text style={styles.soundEmoji}>{s.hindi}</Text>
               <Text style={styles.soundLabel}>{s.label}</Text>
               <View style={{ flex: 1 }} />
-              {s.url ? (
+              {s.file ? (
                 <Pressable
                   onPress={(e) => {
                     e.stopPropagation();
@@ -302,8 +260,8 @@ export default function AlarmSetup() {
         <View style={styles.note}>
           <Feather name="info" size={14} color={colors.muted} />
           <Text style={styles.noteText}>
-            The daily reminder will play your device's notification sound at the
-            chosen time. Preview sounds are for in-app testing.
+            Each morning’s reminder names that day’s Tithi and festival. Om Chant and Temple
+            Bell ring in the installed app; Expo Go plays the phone’s default sound instead.
           </Text>
         </View>
       </ScrollView>

@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 2 (full): Backend v2 (online Panchang + festival calendar) and frontend (home, calendar, share, alarm-setup) all pass. 25/25 pytest tests pass including: online data has new fields (masa, masa_hindi, festivals[], observances[], source, sunrise local string, sunset, yoga, karana, rahu_kalam), bad date -> 400, range days>42 -> 422, month 13 -> 422, 30-day range for 2026-10-21, and all 9 festival-date assertions (Diwali 2026-11-08, Dhanteras 2026-11-06, Bhai Dooj 2026-11-11, Maha Shivaratri 2026-02-15, Dussehra 2026-10-20, Holi 2026-03-04, Makar Sankranti 2026-01-14, Krishna Janmashtami 2026-09-04, Ganesh Chaturthi 2026-09-14). Alarm CRUD + settings regression intact. Frontend: home shows all three header buttons, tithi card renders today-tithi-name=Dashami, today-masa=Ashwin, Yoga=Ganda and Rahu Kaal cells, attribution reads 'Nitya Panchangam (CC-BY 4.0) · Lahiri ayanamsa' (so source=online is reaching UI). Calendar navigates Oct→Nov 2026 and tapping 2026-11-08 shows 'Diwali · Lakshmi Puja' in the day detail; 'This Month' list rendered 8 month-event rows. Share screen renders share-card with ॐ/Dashami/Ashwin and both share-image-button and share-text-button. Alarm-setup exposes sound-om/sound-bell/sound-default + preview-om/preview-bell + save-alarm-button; saving creates an alarm-row on home and alarm-toggle-{id} is tappable. Sound playback / dated notification scheduling can only be verified on a native build (expo-notifications + custom om.wav/bell.wav), so skipped per instructions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_panchang_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py: PANCHANG_API_URL is read at import time; if the upstream domain is blocked or env is missing, module import fails. Current .env has the URL so fine, but consider os.environ.get with graceful fallback to calculated-only mode.",
+    "server.py build_day: when online fetch succeeds, `festivals_for(jd, num)` reuses the astronomically computed sunrise JD even though online 'sunrise' may differ. In practice both are close enough but worth noting for edge-of-day festivals.",
+    "server.py uses deprecated @app.on_event('shutdown'); migrate to FastAPI lifespan handlers.",
+    "panchang_cache has no TTL/version field; stale entries from upstream will live forever. Add schema version or ttl index for safety."
+  ],
+  "updated_files": ["/app/backend/tests/test_panchang_api.py"],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% of UI/flow checks (home, calendar nav + Diwali detail, share card + both share buttons, alarm setup save + toggle)"},
+  "seed_data_creation": "Created and deleted TEST_ alarms + reset settings during tests; no residual data. Note: alarms collection had 4 prior alarms; after our save-alarm UI click there are 5 alarms. Main agent may want to clear db.alarms if a clean slate is desired for next iteration.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Tests live in /app/backend/tests/test_panchang_api.py. Reuse DELHI coords (28.6139,77.209) when asserting festivals. Month endpoint takes ~3-5s cold (30 upstream calls, cached in Mongo panchang_cache); do NOT drop that collection between runs. EXPO_PUBLIC_BACKEND_URL is the public URL (not EXPO_BACKEND_URL). Container date is 2026-10-21 so today's tithi is Shukla Dashami (Vijayadashami) - home UI will show Dashami/Ashwin. Native-only features (expo-notifications dated triggers + om.wav/bell.wav sound playback) are not testable in web preview.",
+  "rca_of_issue": "N/A - no bugs found this iteration."
+}

@@ -8,6 +8,7 @@ best-effort fetch from a free Hindu Panchang API as a secondary source.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import os
@@ -16,6 +17,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
+import httpx
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -83,6 +85,140 @@ TITHI_SIGNIFICANCE = {
     "Purnima": "Full moon fast; Satyanarayan katha, auspicious for all vratas.",
     "Amavasya": "New moon; pitru tarpan, pind daan, remembrance of ancestors.",
 }
+
+
+MASAS = [
+    "Chaitra", "Vaishakha", "Jyeshtha", "Ashadha", "Shravana", "Bhadrapada",
+    "Ashwin", "Kartika", "Margashirsha", "Pausha", "Magha", "Phalguna",
+]
+MASAS_HINDI = [
+    "चैत्र", "वैशाख", "ज्येष्ठ", "आषाढ़", "श्रावण", "भाद्रपद",
+    "आश्विन", "कार्तिक", "मार्गशीर्ष", "पौष", "माघ", "फाल्गुन",
+]
+
+# Major festivals keyed by (amanta masa, tithi number 1..30 where 16..30 = Krishna).
+FESTIVALS = {
+    ("Chaitra", 1): "Ugadi / Gudi Padwa · Chaitra Navratri begins",
+    ("Chaitra", 9): "Ram Navami",
+    ("Chaitra", 15): "Hanuman Jayanti",
+    ("Vaishakha", 3): "Akshaya Tritiya",
+    ("Vaishakha", 15): "Buddha Purnima",
+    ("Jyeshtha", 11): "Nirjala Ekadashi",
+    ("Jyeshtha", 15): "Vat Purnima",
+    ("Ashadha", 2): "Jagannath Rath Yatra",
+    ("Ashadha", 11): "Devshayani Ekadashi",
+    ("Ashadha", 15): "Guru Purnima",
+    ("Shravana", 5): "Nag Panchami",
+    ("Shravana", 15): "Raksha Bandhan",
+    ("Shravana", 23): "Krishna Janmashtami",
+    ("Bhadrapada", 3): "Hartalika Teej",
+    ("Bhadrapada", 4): "Ganesh Chaturthi",
+    ("Bhadrapada", 14): "Anant Chaturdashi",
+    ("Bhadrapada", 30): "Mahalaya Amavasya",
+    ("Ashwin", 1): "Sharad Navratri begins",
+    ("Ashwin", 8): "Durga Ashtami",
+    ("Ashwin", 10): "Dussehra (Vijayadashami)",
+    ("Ashwin", 15): "Sharad Purnima",
+    ("Ashwin", 19): "Karwa Chauth",
+    ("Ashwin", 28): "Dhanteras",
+    ("Ashwin", 29): "Narak Chaturdashi",
+    ("Ashwin", 30): "Diwali · Lakshmi Puja",
+    ("Kartika", 1): "Govardhan Puja",
+    ("Kartika", 2): "Bhai Dooj",
+    ("Kartika", 6): "Chhath Puja",
+    ("Kartika", 11): "Dev Uthani Ekadashi",
+    ("Kartika", 15): "Kartik Purnima · Dev Deepawali",
+    ("Margashirsha", 11): "Gita Jayanti · Mokshada Ekadashi",
+    ("Magha", 5): "Vasant Panchami",
+    ("Magha", 29): "Maha Shivaratri",
+    ("Phalguna", 15): "Holika Dahan",
+    ("Phalguna", 16): "Holi",
+}
+
+SANKRANTI = {270: "Makar Sankranti", 0: "Mesha Sankranti · Baisakhi"}
+
+# Festivals observed at a time of day other than sunrise (fraction of a day after sunrise).
+KALA_OFFSET = {"sunrise": 0.0, "madhyahna": 0.25, "aparahna": 0.33, "pradosh": 0.5, "nishita": 0.75}
+FESTIVAL_KALA = {
+    "Ram Navami": "madhyahna", "Ganesh Chaturthi": "madhyahna",
+    "Dussehra (Vijayadashami)": "aparahna",
+    "Dhanteras": "pradosh", "Diwali · Lakshmi Puja": "pradosh", "Holika Dahan": "pradosh",
+    "Karwa Chauth": "pradosh",
+    "Maha Shivaratri": "nishita", "Krishna Janmashtami": "nishita",
+}
+
+
+def _tithi_at(jd: float) -> int:
+    return int(_norm(_moon_longitude(jd) - _sun_longitude(jd)) // 12) + 1
+
+
+def festivals_for(sunrise_jd: float, sunrise_tithi: Optional[int] = None) -> List[str]:
+    """Major festivals on the civil day starting at sunrise_jd.
+
+    A festival falls on the first day whose tithi at the festival's kala
+    (sunrise / midday / afternoon / evening / midnight) matches.
+    """
+    out = []
+    cache: dict = {}
+
+    def state(kala: str, day_shift: int):
+        k = (kala, day_shift)
+        if k not in cache:
+            j = sunrise_jd + KALA_OFFSET[kala] + day_shift
+            t = sunrise_tithi if (kala == "sunrise" and day_shift == 0 and sunrise_tithi) else _tithi_at(j)
+            m = compute_masa(j)
+            cache[k] = (t, None if m["adhika"] else m["masa"])
+        return cache[k]
+
+    for (masa, num), fname in FESTIVALS.items():
+        kala = next((v for k, v in FESTIVAL_KALA.items() if fname.startswith(k)), "sunrise")
+        if state(kala, 0) == (num, masa) and (kala == "sunrise" or state(kala, -1) != (num, masa)):
+            out.append(fname)
+    ayan = _ayanamsa(sunrise_jd)
+    s_now = _norm(_sun_longitude(sunrise_jd) - ayan)
+    s_next = _norm(_sun_longitude(sunrise_jd + 1) - ayan)
+    for deg, fname in SANKRANTI.items():
+        if (s_now < deg <= s_next) or (deg == 0 and s_now > s_next):
+            out.append(fname)
+    return out
+
+
+def observances_for(tithi_number: int) -> List[str]:
+    """Recurring monthly vratas for a tithi number (1..30)."""
+    return {
+        11: ["Ekadashi Vrat"], 26: ["Ekadashi Vrat"],
+        13: ["Pradosh Vrat"], 28: ["Pradosh Vrat"],
+        19: ["Sankashti Chaturthi"], 4: ["Vinayaka Chaturthi"],
+        29: ["Masik Shivaratri"], 15: ["Purnima Vrat"], 30: ["Amavasya"],
+    }.get(tithi_number, [])
+
+
+def _elongation_signed(jd: float) -> float:
+    d = _norm(_moon_longitude(jd) - _sun_longitude(jd))
+    return d - 360 if d > 180 else d
+
+
+def _new_moon_near(jd_guess: float) -> float:
+    j = jd_guess
+    for _ in range(6):
+        j -= _elongation_signed(j) / 12.1907
+    return j
+
+
+def _sidereal_sun_rashi(jd: float) -> int:
+    return int(_norm(_sun_longitude(jd) - _ayanamsa(jd)) // 30)
+
+
+def compute_masa(jd: float) -> dict:
+    """Amanta lunar month: named from the sun's sidereal sign at the new moon starting it."""
+    elong = _norm(_moon_longitude(jd) - _sun_longitude(jd))
+    prev_nm = _new_moon_near(jd - elong / 12.1907)
+    if prev_nm > jd:
+        prev_nm = _new_moon_near(prev_nm - 29.53)
+    next_nm = _new_moon_near(prev_nm + 29.53)
+    r1, r2 = _sidereal_sun_rashi(prev_nm), _sidereal_sun_rashi(next_nm)
+    idx = (r1 + 1) % 12
+    return {"masa": MASAS[idx], "masa_hindi": MASAS_HINDI[idx], "adhika": r1 == r2}
 
 
 def _norm(angle_deg: float) -> float:
@@ -182,7 +318,15 @@ def compute_panchang(dt_utc: datetime, lat: float, lng: float) -> dict:
     # % progress through this tithi (0..100)
     progress = ((diff % 12) / 12) * 100
 
+    masa = compute_masa(jd)
+    festivals = festivals_for(jd)
+
     return {
+        "masa": ("Adhika " if masa["adhika"] else "") + masa["masa"],
+        "masa_hindi": ("अधिक " if masa["adhika"] else "") + masa["masa_hindi"],
+        "festivals": festivals,
+        "observances": observances_for(tithi_index + 1),
+        "source": "calculated",
         "date": dt_utc.date().isoformat(),
         "tithi": name,
         "tithi_hindi": hindi,
@@ -235,6 +379,16 @@ def _sunrise_utc(d: date, lat: float, lng: float) -> datetime:
 
 
 class Panchang(BaseModel):
+    masa: str
+    masa_hindi: str
+    festivals: List[str]
+    observances: List[str]
+    source: str  # online | calculated
+    sunrise: Optional[str] = None  # local display string from online source
+    sunset: Optional[str] = None
+    yoga: Optional[str] = None
+    karana: Optional[str] = None
+    rahu_kalam: Optional[str] = None
     date: str
     tithi: str
     tithi_hindi: str
@@ -283,35 +437,131 @@ async def root():
     return {"message": "Panchang Alarm API"}
 
 
+PANCHANG_API_URL = os.environ["PANCHANG_API_URL"]
+_online_sem = asyncio.Semaphore(6)
+
+
+async def fetch_online(d: date, lat: float, lng: float) -> Optional[dict]:
+    """Fetch from Nitya Panchangam (CC-BY), cached in Mongo per date+location."""
+    key = f"{d.isoformat()}|{lat:.2f}|{lng:.2f}"
+    cached = await db.panchang_cache.find_one({"key": key}, {"_id": 0})
+    if cached:
+        return cached["data"]
+    try:
+        async with _online_sem, httpx.AsyncClient(
+            timeout=8, headers={"User-Agent": "Mozilla/5.0 (TithiAlarm/1.0)", "Accept": "application/json"}
+        ) as hc:
+            r = await hc.get(PANCHANG_API_URL, params={"date": d.isoformat(), "lat": f"{lat:.4f}", "lng": f"{lng:.4f}"})
+        r.raise_for_status()
+        raw = r.json()
+        num = int(raw["tithi"]["number"])
+        data = {
+            "tithi_number": num,
+            "nakshatra": raw["nakshatra"]["name"],
+            "yoga": raw.get("yoga", {}).get("name"),
+            "karana": raw.get("karana", {}).get("name"),
+            "sunrise": raw.get("sun", {}).get("sunrise"),
+            "sunset": raw.get("sun", {}).get("sunset"),
+            "rahu_kalam": raw.get("muhurta", {}).get("rahu_kalam"),
+        }
+        if not 1 <= num <= 30:
+            raise ValueError(f"bad tithi number {num}")
+        await db.panchang_cache.update_one({"key": key}, {"$set": {"key": key, "data": data}}, upsert=True)
+        return data
+    except Exception as e:
+        logger.warning("online panchang failed for %s: %s", key, e)
+        return None
+
+
+def _tithi_names(num: int) -> tuple[str, str, str]:
+    idx = num - 1
+    if idx < 15:
+        return TITHI_NAMES[idx], TITHI_HINDI[idx], "Shukla"
+    if num == 30:
+        return "Amavasya", "अमावस्या", "Krishna"
+    return TITHI_NAMES[idx - 15], TITHI_HINDI[idx - 15], "Krishna"
+
+
+async def build_day(d: date, lat: float, lng: float) -> dict:
+    """Online Panchang when available; astronomical calculation as fallback."""
+    local = compute_panchang(datetime.combine(d, time(12), tzinfo=timezone.utc), lat, lng)
+    online = await fetch_online(d, lat, lng)
+    if not online:
+        return local
+    num = online["tithi_number"]
+    name, hindi, paksha = _tithi_names(num)
+    jd = _julian_day(datetime.fromisoformat(local["sunrise_utc"]))
+    festivals = festivals_for(jd, num)
+    local.update({
+        "tithi": name,
+        "tithi_hindi": hindi,
+        "tithi_number": num,
+        "paksha": paksha,
+        "paksha_hindi": "शुक्ल पक्ष" if paksha == "Shukla" else "कृष्ण पक्ष",
+        "nakshatra": online["nakshatra"],
+        "yoga": online["yoga"],
+        "karana": online["karana"],
+        "sunrise": online["sunrise"],
+        "sunset": online["sunset"],
+        "rahu_kalam": online["rahu_kalam"],
+        "significance": TITHI_SIGNIFICANCE.get(name, ""),
+        "is_fasting_day": name in {"Ekadashi", "Chaturdashi", "Purnima", "Amavasya"},
+        "festivals": festivals,
+        "observances": observances_for(num),
+        "source": "online",
+    })
+    return local
+
+
+def _parse_date(s: Optional[str]) -> date:
+    if not s:
+        return datetime.now(timezone.utc).date()
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+
+
 @api.get("/panchang", response_model=Panchang)
 async def get_panchang(
     date_str: Optional[str] = Query(default=None, alias="date"),
-    lat: float = Query(default=28.6139),
-    lng: float = Query(default=77.2090),
+    lat: float = Query(default=28.6139, ge=-90, le=90),
+    lng: float = Query(default=77.2090, ge=-180, le=180),
 ):
-    try:
-        if date_str:
-            d = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        else:
-            d = datetime.now(timezone.utc)
-        data = compute_panchang(d, lat, lng)
-        return data
-    except Exception as e:
-        logger.exception("panchang error")
-        raise HTTPException(status_code=500, detail=str(e))
+    return await build_day(_parse_date(date_str), lat, lng)
+
+
+@api.get("/panchang/range", response_model=List[Panchang])
+async def get_panchang_range(
+    start: Optional[str] = Query(default=None),
+    days: int = Query(default=7, ge=1, le=42),
+    lat: float = Query(default=28.6139, ge=-90, le=90),
+    lng: float = Query(default=77.2090, ge=-180, le=180),
+):
+    s = _parse_date(start)
+    return await asyncio.gather(*(build_day(s + timedelta(days=i), lat, lng) for i in range(days)))
 
 
 @api.get("/panchang/week", response_model=List[Panchang])
 async def get_panchang_week(
-    lat: float = Query(default=28.6139),
-    lng: float = Query(default=77.2090),
+    start: Optional[str] = Query(default=None),
+    lat: float = Query(default=28.6139, ge=-90, le=90),
+    lng: float = Query(default=77.2090, ge=-180, le=180),
 ):
-    today = datetime.now(timezone.utc)
-    results = []
-    for i in range(7):
-        d = today + timedelta(days=i)
-        results.append(compute_panchang(d, lat, lng))
-    return results
+    return await get_panchang_range(start=start, days=7, lat=lat, lng=lng)
+
+
+@api.get("/panchang/month", response_model=List[Panchang])
+async def get_panchang_month(
+    year: int = Query(ge=1900, le=2100),
+    month: int = Query(ge=1, le=12),
+    lat: float = Query(default=28.6139, ge=-90, le=90),
+    lng: float = Query(default=77.2090, ge=-180, le=180),
+):
+    first = date(year, month, 1)
+    nxt = date(year + (month == 12), month % 12 + 1, 1)
+    n = (nxt - first).days
+    return await asyncio.gather(*(build_day(first + timedelta(days=i), lat, lng) for i in range(n)))
 
 
 @api.post("/alarms", response_model=Alarm)

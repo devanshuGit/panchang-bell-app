@@ -34,6 +34,11 @@ export default function RootLayout() {
                   name="settings"
                   options={{ presentation: "modal", animation: "slide_from_bottom" }}
                 />
+                <Stack.Screen name="calendar" options={{ animation: "slide_from_right" }} />
+                <Stack.Screen
+                  name="share"
+                  options={{ presentation: "modal", animation: "slide_from_bottom" }}
+                />
               </Stack>
             </KeyboardProvider>
           </QueryClientProvider>
