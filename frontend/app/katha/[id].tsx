@@ -1,15 +1,17 @@
 import { Feather } from "@react-native-vector-icons/feather";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
 import { useSettings } from "@/src/settings-context";
+import { hasVoice, speak, stopSpeaking, type SpeakLang } from "@/src/speech";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 
 const SIZES = [16, 19, 23];
+const RATES = { slow: 0.75, normal: 0.95 };
 
 export default function KathaScreen() {
   const router = useRouter();
@@ -21,6 +23,36 @@ export default function KathaScreen() {
   const k = q.data;
   const hi = lang === "hi";
   const size = SIZES[sizeIdx];
+  const [speaking, setSpeaking] = useState(false);
+  const [speakLang, setSpeakLang] = useState<SpeakLang>("hi");
+  const [rate, setRate] = useState<keyof typeof RATES>("slow");
+  const [hindiOk, setHindiOk] = useState(true);
+
+  useEffect(() => {
+    hasVoice("hi").then(setHindiOk);
+    return () => stopSpeaking();
+  }, []);
+
+  const toggleListen = () => {
+    if (!k) return;
+    if (speaking) {
+      stopSpeaking();
+      setSpeaking(false);
+      return;
+    }
+    const sh = speakLang === "hi";
+    const text = sh
+      ? `${k.title_hindi}। व्रत विधि। ${k.vidhi_hindi} कथा। ${k.story_hindi}`
+      : `${k.title}. How to observe. ${k.vidhi} The story. ${k.story}`;
+    setSpeaking(true);
+    speak(text, speakLang, RATES[rate], () => setSpeaking(false));
+  };
+
+  const changeSpeech = (fn: () => void) => {
+    stopSpeaking();
+    setSpeaking(false);
+    fn();
+  };
 
   const share = async () => {
     if (!k) return;
@@ -75,6 +107,42 @@ export default function KathaScreen() {
             ))}
           </View>
 
+          <View style={styles.listenCard} testID="katha-listen-card">
+            <Pressable onPress={toggleListen} style={styles.listenBtn} testID="katha-listen-button">
+              <Feather name={speaking ? "square" : "volume-2"} size={18} color={colors.onBrandSecondary} />
+              <Text style={styles.listenText}>{speaking ? t("stop") : t("listen")}</Text>
+            </Pressable>
+            <View style={styles.listenOpts}>
+              <Text style={styles.muted}>{t("readIn")}</Text>
+              {(["hi", "en"] as const).map((l) => (
+                <Pressable
+                  key={l}
+                  onPress={() => changeSpeech(() => setSpeakLang(l))}
+                  style={[styles.optChip, speakLang === l && styles.optChipOn]}
+                  testID={`katha-voice-${l}`}
+                >
+                  <Text style={[styles.optText, speakLang === l && styles.optTextOn]}>{l === "hi" ? "हिन्दी" : "English"}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.listenOpts}>
+              <Text style={styles.muted}>{t("speed")}</Text>
+              {(["slow", "normal"] as const).map((r) => (
+                <Pressable
+                  key={r}
+                  onPress={() => changeSpeech(() => setRate(r))}
+                  style={[styles.optChip, rate === r && styles.optChipOn]}
+                  testID={`katha-speed-${r}`}
+                >
+                  <Text style={[styles.optText, rate === r && styles.optTextOn]}>{t(r)}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {speakLang === "hi" && !hindiOk ? (
+              <Text style={styles.voiceWarn} testID="katha-no-hindi-voice">{t("noHindiVoice")}</Text>
+            ) : null}
+          </View>
+
           {(hi ? k.vidhi_hindi : k.vidhi) ? (
             <View style={styles.vidhi} testID="katha-vidhi">
               <View style={styles.vidhiHead}>
@@ -99,6 +167,39 @@ export default function KathaScreen() {
 }
 
 const styles = StyleSheet.create({
+  listenCard: {
+    marginTop: spacing.lg,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.md,
+  },
+  listenBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    minHeight: 48,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandSecondary,
+  },
+  listenText: { color: colors.onBrandSecondary, fontFamily: fonts.bodyBold, fontSize: 16 },
+  listenOpts: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  optChip: {
+    flexShrink: 0,
+    height: 36,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    justifyContent: "center",
+  },
+  optChipOn: { backgroundColor: colors.brandTertiary, borderColor: colors.brandSecondary },
+  optText: { color: colors.muted, fontFamily: fonts.bodyMedium, fontSize: 13 },
+  optTextOn: { color: colors.brandSecondary },
+  voiceWarn: { color: colors.warning, fontFamily: fonts.body, fontSize: 12, lineHeight: 17 },
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: "row",

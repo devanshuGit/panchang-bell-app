@@ -10,6 +10,14 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export type EkadashiDay = {
+  date: string;
+  paksha: string;
+  katha_id?: string | null;
+  name: string;
+  name_hindi: string;
+};
+
 export type KathaRef = { id: string; title: string; title_hindi: string };
 export type Katha = KathaRef & {
   category: "ekadashi" | "festival" | "monthly";
@@ -73,6 +81,11 @@ export const api = {
   listKathas: (category?: Katha["category"]) =>
     req<KathaRef[]>(`/kathas${category ? `?category=${category}` : ""}`),
   getKatha: (id: string) => req<Katha>(`/kathas/${encodeURIComponent(id)}`),
+  listEkadashis: (lat: number, lng: number, year: number) =>
+    req<EkadashiDay[]>(`/ekadashis?lat=${lat}&lng=${lng}&year=${year}`),
+  listVrats: (year: number) => req<{ date: string; kept: boolean }[]>(`/vrats?year=${year}`),
+  setVrat: (date: string, kept: boolean) =>
+    req<{ date: string; kept: boolean }>(`/vrats/${date}`, { method: "PUT", body: JSON.stringify({ kept }) }),
   listAlarms: () => req<Alarm[]>("/alarms"),
   createAlarm: (data: Omit<Alarm, "id" | "created_at">) =>
     req<Alarm>("/alarms", { method: "POST", body: JSON.stringify(data) }),

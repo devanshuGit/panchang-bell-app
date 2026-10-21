@@ -12,6 +12,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -28,7 +29,9 @@ import {
   syncAlarmSchedules,
 } from "@/src/notifications";
 import { formatTime, localeOf, localizeTimes, lp, WEEK_LETTERS } from "@/src/i18n";
+import { mantraFor } from "@/src/mantras";
 import { useSettings } from "@/src/settings-context";
+import { speak, stopSpeaking } from "@/src/speech";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 
 const NIGHT_SKY =
@@ -132,6 +135,7 @@ export default function Home() {
           testID="header"
         />
         <TithiCard panchang={panchangQ.data} loading={panchangQ.isLoading} />
+        {panchangQ.data ? <MantraCard p={panchangQ.data} /> : null}
         <WeekStrip week={rangeQ.data?.slice(0, 7)} />
         <AlarmsSection
           alarms={alarmsQ.data || []}
@@ -157,6 +161,18 @@ export default function Home() {
           >
             {eveningEnabled ? t("on") : t("off")}
           </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push("/tracker")}
+          style={styles.eveningCard}
+          testID="vrat-tracker-card"
+        >
+          <Feather name="check-circle" size={20} color={colors.brandSecondary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.eveningTitle}>{t("vratTracker")}</Text>
+            <Text style={styles.eveningSub}>{t("vratTrackerSub")}</Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.muted} />
         </Pressable>
         <Text style={styles.attribution} testID="panchang-attribution">
           {panchangQ.data?.source === "calculated" ? t("attributionCalc") : t("attributionOnline")}
@@ -305,6 +321,9 @@ function TithiCard({ panchang, loading }: { panchang?: Panchang; loading: boolea
                   <Feather name="chevron-right" size={18} color={colors.brandSecondary} />
                 </Pressable>
               ))}
+              {panchang.tithi === "Ekadashi" || panchang.kshaya_tithi === "Ekadashi" ? (
+                <EkadashiKeptToggle date={panchang.date} />
+              ) : null}
             </>
           )}
         </View>
@@ -467,7 +486,95 @@ function AddButton({ bottom, onPress }: { bottom: number; onPress: () => void })
   );
 }
 
+function EkadashiKeptToggle({ date }: { date: string }) {
+  const { t } = useSettings();
+  const qc = useQueryClient();
+  const year = Number(date.slice(0, 4));
+  const q = useQuery({ queryKey: ["vrats", year], queryFn: () => api.listVrats(year) });
+  const kept = !!q.data?.find((v) => v.date === date && v.kept);
+  const toggle = async () => {
+    await api.setVrat(date, !kept);
+    qc.invalidateQueries({ queryKey: ["vrats", year] });
+  };
+  return (
+    <Pressable onPress={toggle} style={[styles.keptBtn, kept && styles.keptBtnOn]} testID="today-ekadashi-kept-toggle">
+      <Feather name={kept ? "check-circle" : "circle"} size={18} color={kept ? colors.onBrandSecondary : colors.brandSecondary} />
+      <Text style={[styles.keptText, kept && { color: colors.onBrandSecondary }]}>{t("keptToday")}</Text>
+    </Pressable>
+  );
+}
+
+function MantraCard({ p }: { p: Panchang }) {
+  const { lang, t } = useSettings();
+  const [speaking, setSpeaking] = useState(false);
+  const m = mantraFor(p.tithi, lang);
+  useEffect(() => () => stopSpeaking(), []);
+  if (!m) return null;
+  const listen = () => {
+    if (speaking) {
+      stopSpeaking();
+      setSpeaking(false);
+      return;
+    }
+    setSpeaking(true);
+    speak(m.text, "hi", 0.75, () => setSpeaking(false));
+  };
+  const share = () =>
+    Share.share({ message: `ॐ ${t("todaysMantra")} · ${m.deity}\n\n${m.text}\n\n${m.meaning}\n\n${t("sentWith")}` }).catch(() => {});
+  return (
+    <View style={styles.mantraCard} testID="mantra-card">
+      <View style={styles.mantraHead}>
+        <Text style={styles.mantraKicker}>{t("todaysMantra")} · {m.deity}</Text>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <Pressable onPress={listen} style={styles.mantraIcon} testID="mantra-listen-button">
+            <Feather name={speaking ? "square" : "volume-2"} size={16} color={colors.brandSecondary} />
+          </Pressable>
+          <Pressable onPress={share} style={styles.mantraIcon} testID="mantra-share-button">
+            <Feather name="share-2" size={16} color={colors.brandSecondary} />
+          </Pressable>
+        </View>
+      </View>
+      <Text style={styles.mantraText} testID="mantra-text">{m.text}</Text>
+      <Text style={styles.mantraMeaning} testID="mantra-meaning">{m.meaning}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  keptBtn: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.brandSecondary,
+  },
+  keptBtnOn: { backgroundColor: colors.brandSecondary },
+  keptText: { color: colors.brandSecondary, fontFamily: fonts.bodyBold, fontSize: 14 },
+  mantraCard: {
+    marginTop: spacing.lg,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    gap: spacing.sm,
+  },
+  mantraHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  mantraKicker: { color: colors.brandSecondary, fontFamily: fonts.bodyBold, fontSize: 12, letterSpacing: 0.6, flexShrink: 1 },
+  mantraIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceTertiary,
+  },
+  mantraText: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 20, lineHeight: 32, textAlign: "center", marginVertical: spacing.sm },
+  mantraMeaning: { color: colors.onSurfaceSecondary, fontFamily: fonts.body, fontSize: 13, lineHeight: 19, textAlign: "center" },
   root: { flex: 1, backgroundColor: colors.surface },
   headerActions: { flexDirection: "row", gap: spacing.sm },
   kathaBtn: {

@@ -40,6 +40,7 @@ export default function RootLayout() {
                 />
                 <Stack.Screen name="calendar" options={{ animation: "slide_from_right" }} />
                 <Stack.Screen name="kathas" options={{ animation: "slide_from_right" }} />
+                <Stack.Screen name="tracker" options={{ animation: "slide_from_right" }} />
                 <Stack.Screen name="katha/[id]" options={{ animation: "slide_from_right" }} />
                 <Stack.Screen
                   name="share"

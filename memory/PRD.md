@@ -49,6 +49,12 @@ Astronomical Tithi/Nakshatra computation (simplified Meeus) — no external API 
 - Kshaya (skipped) tithi handling: a tithi that starts and ends between two sunrises is observed that day (e.g. Dev Uthani Ekadashi 2026-11-20).
 - Credits section in Settings: Om pro.ogg by Tito Dutta (CC BY-SA 3.0, changes noted, source + licence links), bell, Panchang, kathas.
 
+## Iteration 5 (Oct 2026) — done, 54/54 backend tests + frontend flows pass
+- Katha audio: phone's built-in voice via expo-speech (free, offline; no AI voice cost). Hindi/English, slow/normal speed, stop; warns when the phone has no Hindi voice. Mantra card also has a listen button.
+- Ekadashi Vrat Tracker (`app/tracker.tsx`): `GET /api/ekadashis?year` (named Ekadashis, kshaya + vriddhi handled), `GET/PUT /api/vrats`; current/best streak, kept-this-year; Home toggle on Ekadashi days.
+- Daily Mantra: one mantra per Tithi deity (`src/mantras.ts`), Sanskrit + meaning in Hindi/English, share.
+- Fixes: sunrise was placed on the wrong UTC day when Indian sunrise falls before 00:00 UTC (summer) — affected calculated tithis/kshaya/festival kala; sunrise-time festivals no longer duplicate when a tithi spans two sunrises (Vat Purnima).
+
 ## Next ideas
 - Offline-first alarms (persist in SecureStore, reschedule on boot).
 - Monthly festival calendar (Diwali, Shivratri, Ekadashi vrat list).

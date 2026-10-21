@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 5 (Katha Audio + Vrat Tracker + Daily Mantra). Backend: 54/54 pytest cases pass — the 42 prior Panchang/festival/alarm/settings/katha regression tests plus 12 new tests in /app/backend/tests/test_ekadashis_vrats_api.py covering GET /api/ekadashis?year=2026&lat=28.61&lng=77.21 (returns 24 entries, no duplicate dates, 'padmini' on 2026-05-26, 'parama' on 2026-06-11, 'nirjala' on 2026-06-25, 'yogini' only once on 2026-07-10, 'devutthana' on 2026-11-20; every entry has date/paksha/katha_id/name/name_hindi and name_hindi is Devanagari); PUT /api/vrats/{date} upsert + toggle false, GET /api/vrats?year= reflects the latest value, future 2027-05-01 -> 400, 'not-a-date' -> 400 (cleaned up); regression: Vat Purnima occurs only on 2026-06-29 across 2026-06-28..2026-07-01 (previously also 06-30), and sunrise_utc for 2026-06-15 Delhi starts with '2026-06-14T23:5' (54.2 min). Frontend (web preview, 390x844, container date 2026-10-21 → Dashami): mantra-card shows mantra-text 'धर्मो रक्षति रक्षितः' and English meaning 'Dharma protects those who protect dharma.'; mantra-listen-button and mantra-share-button present; after switching language to Hindi, mantra-meaning becomes 'जो धर्म की रक्षा करता है, धर्म उसकी रक्षा करता है।' (Devanagari). vrat-tracker-card opens /tracker which shows stat-current-streak / stat-best-streak / stat-kept-year, tracker-year='2026', tracker-prev-year -> 2025, tracker-next-year -> 2026, tracker-row-2026-10-06 exists with tracker-check-2026-10-06; checking the past Ekadashi 2026-10-06 updates kept-this-year '0 of 19' -> '1 of 19' and unchecking restores '0 of 19'. Future rows (e.g. 2026-11-20) are present and the check is disabled. /katha/rama shows katha-listen-card with katha-listen-button, katha-voice-hi/en, katha-speed-slow/normal, and the expected katha-no-hindi-voice warning (headless browser has no Hindi voice). Listen button does not crash in headless; its 'Listen'/'Stop' label does not flip because expo-speech's onDone fires immediately with no engine — matches the spec note that actual audio can't be verified in headless. today-ekadashi-kept-toggle correctly absent on Dashami (expected).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ekadashis_vrats_api.py",
+    "/app/backend/tests/test_kathas_api.py",
+    "/app/backend/tests/test_panchang_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:539 list_ekadashis() builds a cache from panchang_cache using a regex on 'YYYY-MM-DD|lat|lng' keys — works but tightly couples the cache key format. If the key schema ever changes the ekadashis endpoint silently falls back to purely-calculated tithi numbers (no error). Consider using a structured query (store date, lat, lng as separate fields) for future-proofing.",
+    "server.py:593 put_vrat() allows a vrat up to 'today + 1 day' UTC. On a device whose local date is already tomorrow but UTC is still today, the user could tick 'today' without issue, but a user whose local date is still today while UTC is tomorrow could tick an extra day ahead. Minor edge case; probably acceptable for a global API.",
+    "server.py:558 the 'cached' lookup only inserts entries whose online key matches 'YYYY-MM-DD|lat|lng$'; keys with slightly different lat/lng precision would miss. Fine today because the frontend only queries one lat/lng pair, but worth documenting.",
+    "frontend/app/katha/[id].tsx:48 speak() onDone callback resets 'speaking' to false — in headless web the TTS engine is absent and onDone fires synchronously, so the Listen/Stop label never visibly flips. On real device this is fine. Consider surfacing a brief 'No voice available' toast on the katha-listen-button tap when hasVoice(speakLang)===false, in addition to the inline warning.",
+    "Code review: tracker.tsx computeStats() counts 'current streak' back from the latest past Ekadashi and does not break the streak if the current day's unmarked fast is today — correct per the spec comment. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ekadashis_vrats_api.py"
+  ],
+  "success_rate": {
+    "backend": "100% (54/54 pytest including 12 new ekadashis/vrats/regression cases)",
+    "frontend": "100% of in-scope flows (mantra EN+HI, vrat-tracker-card, /tracker stats + check-toggle + year nav + past-vs-future, /katha/rama listen controls + no-hindi-voice warning). Audio playback itself is not verifiable in headless (per spec)."
+  },
+  "seed_data_creation": "None. Vrat tests toggle 2026-02-02 and clean it up via Mongo in teardown_class.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests now live in three files: test_panchang_api.py (28), test_kathas_api.py (14), test_ekadashis_vrats_api.py (12). Run via `pytest /app/backend/tests -v --junitxml=/app/test_reports/pytest/pytest_results.xml`. Key frontend testIDs for the new vrat/mantra flow: mantra-card / mantra-text / mantra-meaning / mantra-listen-button / mantra-share-button on Home; vrat-tracker-card on Home; stat-current-streak / stat-best-streak / stat-kept-year, tracker-year, tracker-prev-year, tracker-next-year, tracker-row-{YYYY-MM-DD}, tracker-check-{YYYY-MM-DD} on /tracker; katha-listen-card, katha-listen-button, katha-voice-hi, katha-voice-en, katha-speed-slow, katha-speed-normal, katha-no-hindi-voice on /katha/[id]; today-ekadashi-kept-toggle on Home only when today's tithi is Ekadashi (not reachable on container date 2026-10-21 Dashami).",
+  "rca_of_issue": "N/A — all tested features working as specified."
+}

@@ -183,7 +183,7 @@ def festivals_for(sunrise_jd: float, sunrise_tithi: Optional[int] = None) -> Lis
     for (masa, num), fname in FESTIVALS.items():
         kala = next((v for k, v in FESTIVAL_KALA.items() if fname.startswith(k)), "sunrise")
         t_now, m_now = state(kala, 0)
-        if kala == "sunrise" and m_now == masa and num in (t_now, skip):
+        if kala == "sunrise" and m_now == masa and num in (t_now, skip) and state("sunrise", -1) != (num, masa):
             out.append(fname)
         elif kala != "sunrise" and (t_now, m_now) == (num, masa) and state(kala, -1) != (num, masa):
             out.append(fname)
@@ -492,11 +492,10 @@ def _sunrise_utc(d: date, lat: float, lng: float) -> datetime:
     h = 360 - math.degrees(math.acos(cos_h))
     h /= 15.0
     tt = h + ra_h - 0.06571 * t - 6.622
-    ut = tt - lng_hour
-    ut = ut % 24
-    hours = int(ut)
-    minutes = int((ut - hours) * 60)
-    return datetime(d.year, d.month, d.day, hours, minutes, tzinfo=timezone.utc)
+    # tt is local mean time; convert to UTC on this calendar day (may fall on the previous UTC day,
+    # e.g. 05:25 IST sunrise = 23:55 UTC the day before).
+    ut = (tt % 24) - lng_hour
+    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc) + timedelta(hours=ut)
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +526,79 @@ def _katha_out(kid: str) -> Katha:
         vidhi_hindi=k.get("vidhi_hi") or (EKADASHI_VIDHI_HI if is_ek else ""),
         story=k["story"], story_hindi=k["story_hi"],
     )
+
+
+class EkadashiDay(BaseModel):
+    date: str
+    paksha: str
+    katha_id: Optional[str] = None
+    name: str
+    name_hindi: str
+
+
+@api.get("/ekadashis", response_model=List[EkadashiDay])
+async def list_ekadashis(
+    year: int = Query(ge=1900, le=2100),
+    lat: float = Query(default=28.6139, ge=-90, le=90),
+    lng: float = Query(default=77.2090, ge=-180, le=180),
+):
+    """Every Ekadashi fast day of a year. Uses cached online tithis where available, else calculation."""
+    import re
+
+    pattern = f"^{year}-\\d\\d-\\d\\d{re.escape(f'|{lat:.2f}|{lng:.2f}')}$"
+    docs = await db.panchang_cache.find({"key": {"$regex": pattern}}, {"_id": 0}).to_list(400)
+    cached = {doc["key"].split("|")[0]: doc["data"]["tithi_number"] for doc in docs}
+    first = date(year, 1, 1)
+    out: List[EkadashiDay] = []
+    prev_num = None
+    for i in range((date(year + 1, 1, 1) - first).days):
+        d = first + timedelta(days=i)
+        sunrise = _sunrise_utc(d, lat, lng)
+        jd = _julian_day(sunrise)
+        num = cached.get(d.isoformat()) or _tithi_at(jd)
+        skip = skipped_tithi(jd, num)
+        ek = next((t for t in (num, skip) if t in (11, 26)), None)
+        # A tithi present at two sunrises (vriddhi) is fasted on the first day only.
+        if ek and ek != prev_num:
+            masa = compute_masa(jd)
+            month = "Adhika" if masa["adhika"] else masa["masa"]
+            kid = EKADASHI_BY_AMANTA.get((month, "S" if ek == 11 else "K"))
+            k = ALL_KATHAS.get(kid or "", {})
+            out.append(EkadashiDay(
+                date=d.isoformat(), paksha="Shukla" if ek == 11 else "Krishna", katha_id=kid,
+                name=k.get("title", "Ekadashi"), name_hindi=k.get("title_hi", "एकादशी"),
+            ))
+        prev_num = ek if ek == num else None
+    return out
+
+
+class VratEntry(BaseModel):
+    date: str
+    kept: bool
+
+
+class VratUpdate(BaseModel):
+    kept: bool
+
+
+@api.get("/vrats", response_model=List[VratEntry])
+async def list_vrats(year: int = Query(ge=1900, le=2100)):
+    docs = await db.vrat_log.find({"date": {"$regex": f"^{year}-"}}, {"_id": 0, "date": 1, "kept": 1}).to_list(400)
+    return [VratEntry(**d) for d in docs]
+
+
+@api.put("/vrats/{date_str}", response_model=VratEntry)
+async def put_vrat(date_str: str, payload: VratUpdate):
+    d = _parse_date(date_str)
+    if d > datetime.now(timezone.utc).date() + timedelta(days=1):
+        raise HTTPException(status_code=400, detail="Cannot mark a future fast")
+    entry = VratEntry(date=d.isoformat(), kept=payload.kept)
+    await db.vrat_log.update_one(
+        {"date": entry.date},
+        {"$set": {**entry.model_dump(), "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return entry
 
 
 @api.get("/kathas", response_model=List[KathaRef])
