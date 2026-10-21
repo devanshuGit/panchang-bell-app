@@ -9,6 +9,10 @@ export type UserSettings = {
   city: string;
   defaultSound: string;
   useDeviceLocation: boolean;
+  language: "en" | "hi" | null; // null = follow the phone's language
+  eveningEnabled: boolean;
+  eveningHour: number;
+  eveningMinute: number;
 };
 
 export const defaultSettings: UserSettings = {
@@ -17,6 +21,10 @@ export const defaultSettings: UserSettings = {
   city: "New Delhi",
   defaultSound: "om",
   useDeviceLocation: true,
+  language: null,
+  eveningEnabled: true,
+  eveningHour: 19,
+  eveningMinute: 0,
 };
 
 export async function loadSettings(): Promise<UserSettings> {

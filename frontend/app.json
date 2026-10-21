@@ -56,13 +56,17 @@
         "expo-notifications",
         {
           "color": "#D97706",
-          "sounds": ["./assets/sounds/om.wav", "./assets/sounds/bell.wav"]
+          "sounds": [
+            "./assets/sounds/om.wav",
+            "./assets/sounds/bell.wav"
+          ]
         }
       ],
       "@react-native-community/datetimepicker",
       "@react-native-vector-icons/feather",
       "expo-sharing",
-      "expo-asset"
+      "expo-asset",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true

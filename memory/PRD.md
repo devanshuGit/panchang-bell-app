@@ -38,6 +38,11 @@ Astronomical Tithi/Nakshatra computation (simplified Meeus) — no external API 
 - Reminders now dated per day (next 30 days, ≤60 pending) with that day's Tithi + festival in the notification; respects repeat days and enable toggle; rescheduled on every Home load.
 - Known: custom sounds only in installed builds (Expo Go = default sound); reminders stop if app unopened 30 days; Holika Dahan 2026 shows Mar 2 (commonly Mar 3).
 
+## Iteration 3 (Oct 2026) — done, 28/28 backend tests + frontend flows pass
+- Evening-before reminders: night before major festivals, Ekadashi, Purnima, Amavasya. Toggle + time (6/7/8/9 PM chips, custom picker on phone) in Settings; default ON at 7 PM; Home shows a status card. Scheduled first within the 60-notification budget.
+- Hindi mode: full UI in Hindi via `src/i18n.ts` + `SettingsProvider` (`src/settings-context.tsx`); follows phone language until user picks हिन्दी/English in Settings. Backend adds nakshatra_hindi, yoga_hindi, festivals_hindi, observances_hindi, significance_hindi. Times shown as सुबह/दोपहर/शाम/रात. Notifications and share card follow the language.
+- Fixes: Hindi default alarm label; back buttons work when a screen is opened directly.
+
 ## Next ideas
 - Offline-first alarms (persist in SecureStore, reschedule on boot).
 - Monthly festival calendar (Diwali, Shivratri, Ekadashi vrat list).

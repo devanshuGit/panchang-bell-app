@@ -4,8 +4,8 @@ import { BlurView } from "expo-blur";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
-import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -27,7 +27,8 @@ import {
   ensureNotificationPermission,
   syncAlarmSchedules,
 } from "@/src/notifications";
-import { defaultSettings, loadSettings, saveSettings } from "@/src/settings-store";
+import { formatTime, localeOf, localizeTimes, lp, WEEK_LETTERS } from "@/src/i18n";
+import { useSettings } from "@/src/settings-context";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 
 const NIGHT_SKY =
@@ -37,72 +38,61 @@ export default function Home() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
-  const [coords, setCoords] = useState({ lat: defaultSettings.lat, lng: defaultSettings.lng });
-  const [city, setCity] = useState(defaultSettings.city);
+  const { settings, ready, update, lang, t } = useSettings();
+  const coords = { lat: settings.lat, lng: settings.lng };
 
-  // Re-read saved location whenever Home regains focus (e.g. after Settings).
-  useFocusEffect(
-    useCallback(() => {
-      loadSettings().then((s) => {
-        setCoords((c) => (c.lat === s.lat && c.lng === s.lng ? c : { lat: s.lat, lng: s.lng }));
-        setCity(s.city);
-      });
-    }, []),
-  );
-
-  // Request location + notification permissions once.
+  // Request notification + location permissions once settings are loaded.
   useEffect(() => {
+    if (!ready) return;
     (async () => {
-      const s = await loadSettings();
       await ensureNotificationPermission();
       await ensureChannel();
-      if (s.useDeviceLocation && Platform.OS !== "web") {
+      if (settings.useDeviceLocation && Platform.OS !== "web") {
         try {
           const perm = await Location.requestForegroundPermissionsAsync();
           if (perm.granted) {
             const pos = await Location.getCurrentPositionAsync({});
-            const next = {
-              ...s,
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-            };
-            setCoords({ lat: next.lat, lng: next.lng });
+            let city = settings.city;
             try {
               const places = await Location.reverseGeocodeAsync({
-                latitude: next.lat,
-                longitude: next.lng,
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude,
               });
-              if (places[0]?.city) {
-                next.city = places[0].city;
-                setCity(places[0].city);
-              }
+              city = places[0]?.city || city;
             } catch {}
-            await saveSettings(next);
+            update({ lat: pos.coords.latitude, lng: pos.coords.longitude, city });
           }
         } catch {}
       }
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once after settings load
+  }, [ready]);
 
   const today = toISODate(new Date());
   const panchangQ = useQuery({
     queryKey: ["panchang", coords.lat, coords.lng, today],
     queryFn: () => api.getPanchang(coords.lat, coords.lng, today),
+    enabled: ready,
   });
 
-  // 30 days ahead: drives the week strip and the dated alarm notifications.
+  // 30 days ahead: drives the week strip and the dated notifications.
   const rangeQ = useQuery({
     queryKey: ["panchang-range", coords.lat, coords.lng, today],
     queryFn: () => api.getRange(coords.lat, coords.lng, today, 30),
+    enabled: ready,
   });
 
   const alarmsQ = useQuery({ queryKey: ["alarms"], queryFn: api.listAlarms });
 
+  const { eveningEnabled, eveningHour, eveningMinute, defaultSound } = settings;
   useEffect(() => {
     if (alarmsQ.data && rangeQ.data) {
-      syncAlarmSchedules(alarmsQ.data, rangeQ.data).catch((e) => console.warn("sync failed", e));
+      syncAlarmSchedules(alarmsQ.data, rangeQ.data, {
+        lang,
+        evening: { enabled: eveningEnabled, hour: eveningHour, minute: eveningMinute, sound: defaultSound },
+      }).catch((e) => console.warn("sync failed", e));
     }
-  }, [alarmsQ.data, rangeQ.data]);
+  }, [alarmsQ.data, rangeQ.data, lang, eveningEnabled, eveningHour, eveningMinute, defaultSound]);
 
   const refreshing = panchangQ.isRefetching || alarmsQ.isRefetching;
 
@@ -135,7 +125,7 @@ export default function Home() {
         }
       >
         <Header
-          city={city}
+          city={settings.city}
           onSettings={() => router.push("/settings")}
           onCalendar={() => router.push("/calendar")}
           onShare={() => router.push("/share")}
@@ -149,10 +139,27 @@ export default function Home() {
           onAdd={() => router.push("/alarm-setup")}
           onEdit={(a) => router.push({ pathname: "/alarm-setup", params: { id: a.id } })}
         />
+        <Pressable
+          onPress={() => router.push("/settings")}
+          style={styles.eveningCard}
+          testID="evening-reminder-card"
+        >
+          <Feather name="sunset" size={20} color={colors.brandSecondary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.eveningTitle}>{t("eveningCardTitle")}</Text>
+            <Text style={styles.eveningSub}>
+              {t("eveningCardSub", { time: formatTime(eveningHour, eveningMinute, lang) })}
+            </Text>
+          </View>
+          <Text
+            style={[styles.eveningState, !eveningEnabled && { color: colors.muted }]}
+            testID="evening-reminder-state"
+          >
+            {eveningEnabled ? t("on") : t("off")}
+          </Text>
+        </Pressable>
         <Text style={styles.attribution} testID="panchang-attribution">
-          {panchangQ.data?.source === "calculated"
-            ? "Panchang calculated on-device from sun & moon positions (offline)"
-            : "Panchang data: Nitya Panchangam (CC-BY 4.0) · Lahiri ayanamsa"}
+          {panchangQ.data?.source === "calculated" ? t("attributionCalc") : t("attributionOnline")}
         </Text>
       </ScrollView>
 
@@ -174,7 +181,8 @@ function Header({
   onShare: () => void;
   testID?: string;
 }) {
-  const today = new Date().toLocaleDateString(undefined, {
+  const { lang, t } = useSettings();
+  const today = new Date().toLocaleDateString(localeOf(lang), {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -182,8 +190,8 @@ function Header({
   return (
     <View style={styles.header} testID={testID}>
       <View>
-        <Text style={styles.hello}>Namaste 🙏</Text>
-        <Text style={styles.date}>{today}</Text>
+        <Text style={styles.hello}>{t("namaste")}</Text>
+        <Text style={styles.date} testID="header-date">{today}</Text>
         <View style={styles.cityRow}>
           <Feather name="map-pin" size={12} color={colors.brandSecondary} />
           <Text style={styles.city}>{city}</Text>
@@ -210,26 +218,34 @@ function Header({
 }
 
 function TithiCard({ panchang, loading }: { panchang?: Panchang; loading: boolean }) {
+  const { lang, t } = useSettings();
+  const l = panchang ? lp(panchang, lang) : null;
   return (
     <View style={styles.cardWrap} testID="tithi-card">
       <BlurView intensity={30} tint="dark" style={styles.blur}>
         <View style={styles.cardInner}>
           <Text style={styles.pakshaChip}>
-            {panchang ? `${panchang.paksha_hindi} • ${panchang.paksha} Paksha` : "Today"}
+            {panchang
+              ? lang === "hi"
+                ? panchang.paksha_hindi
+                : `${panchang.paksha_hindi} • ${panchang.paksha} Paksha`
+              : t("today")}
           </Text>
-          {loading || !panchang ? (
+          {loading || !panchang || !l ? (
             <ActivityIndicator color={colors.brandSecondary} style={{ marginTop: spacing.xl }} />
           ) : (
             <>
               <Text style={styles.tithiNameHi} testID="today-tithi-hindi">{panchang.tithi_hindi}</Text>
-              <Text style={styles.tithiNameEn} testID="today-tithi-name">{panchang.tithi}</Text>
-              <Text style={styles.masaLine} testID="today-masa">
-                {panchang.masa_hindi} मास · {panchang.masa}
+              <Text style={styles.tithiNameEn} testID="today-tithi-name">
+                {lang === "hi" ? l.tithiFull : panchang.tithi}
               </Text>
-              {panchang.festivals.length > 0 ? (
+              <Text style={styles.masaLine} testID="today-masa">
+                {lang === "hi" ? l.masa : `${panchang.masa_hindi} मास · ${panchang.masa}`}
+              </Text>
+              {l.festivals.length > 0 ? (
                 <View style={styles.festivalBanner} testID="today-festival">
                   <Feather name="star" size={14} color={colors.onBrandSecondary} />
-                  <Text style={styles.festivalText}>{panchang.festivals.join(" · ")}</Text>
+                  <Text style={styles.festivalText}>{l.festivals.join(" · ")}</Text>
                 </View>
               ) : null}
               <View style={styles.progressBarBg}>
@@ -238,18 +254,18 @@ function TithiCard({ panchang, loading }: { panchang?: Panchang; loading: boolea
                 />
               </View>
               <Text style={styles.progressLabel}>
-                {panchang.progress_pct}% through this Tithi
+                {t("throughTithi", { pct: panchang.progress_pct })}
               </Text>
 
               <View style={styles.row}>
-                <InfoCell label="Nakshatra" value={panchang.nakshatra} />
-                <InfoCell label="Sunrise" value={sunriseLabel(panchang)} />
+                <InfoCell label={t("nakshatra")} value={l.nakshatra} />
+                <InfoCell label={t("sunrise")} value={localizeTimes(sunriseLabel(panchang), lang)} />
               </View>
-              {panchang.yoga || panchang.rahu_kalam ? (
+              {l.yoga || panchang.rahu_kalam ? (
                 <View style={[styles.row, { marginTop: spacing.md }]}>
-                  {panchang.yoga ? <InfoCell label="Yoga" value={panchang.yoga} /> : null}
+                  {l.yoga ? <InfoCell label={t("yoga")} value={l.yoga} /> : null}
                   {panchang.rahu_kalam ? (
-                    <InfoCell label="Rahu Kaal" value={panchang.rahu_kalam} />
+                    <InfoCell label={t("rahuKaal")} value={localizeTimes(panchang.rahu_kalam, lang)} />
                   ) : null}
                 </View>
               ) : null}
@@ -260,15 +276,15 @@ function TithiCard({ panchang, loading }: { panchang?: Panchang; loading: boolea
                   size={14}
                   color={colors.brandSecondary}
                 />
-                <Text style={styles.significanceText}>
-                  {panchang.significance || "A peaceful day for prayer and reflection."}
+                <Text style={styles.significanceText} testID="today-significance">
+                  {l.significance || t("peaceful")}
                 </Text>
               </View>
 
               {panchang.is_fasting_day ? (
                 <View style={styles.fastingBadge}>
                   <Feather name="moon" size={12} color={colors.onBrandSecondary} />
-                  <Text style={styles.fastingBadgeText}>Fasting Day (व्रत)</Text>
+                  <Text style={styles.fastingBadgeText}>{t("fastingDay")}</Text>
                 </View>
               ) : null}
             </>
@@ -289,10 +305,11 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 }
 
 function WeekStrip({ week }: { week?: Panchang[] }) {
+  const { lang, t } = useSettings();
   if (!week?.length) return null;
   return (
     <View style={{ marginTop: spacing.xl }}>
-      <Text style={styles.sectionTitle}>Upcoming Tithis</Text>
+      <Text style={styles.sectionTitle}>{t("upcomingTithis")}</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -305,7 +322,7 @@ function WeekStrip({ week }: { week?: Panchang[] }) {
             testID={`day-chip-${idx}`}
           >
             <Text style={[styles.dayChipDate, idx === 0 && styles.dayChipDateActive]}>
-              {fromISODate(p.date).toLocaleDateString(undefined, {
+              {fromISODate(p.date).toLocaleDateString(localeOf(lang), {
                 weekday: "short",
                 day: "numeric",
               })}
@@ -315,7 +332,7 @@ function WeekStrip({ week }: { week?: Panchang[] }) {
               adjustsFontSizeToFit
               style={[styles.dayChipTithi, idx === 0 && styles.dayChipTithiActive]}
             >
-              {p.tithi}
+              {lp(p, lang).tithi}
             </Text>
             <Text style={styles.dayChipPaksha}>
               {p.paksha === "Shukla" ? "शुक्ल" : "कृष्ण"}
@@ -338,18 +355,17 @@ function AlarmsSection({
   onAdd: () => void;
   onEdit: (a: Alarm) => void;
 }) {
+  const { t } = useSettings();
   return (
     <View style={{ marginTop: spacing.xl }}>
-      <Text style={styles.sectionTitle}>Daily Reminders</Text>
+      <Text style={styles.sectionTitle}>{t("dailyReminders")}</Text>
       {loading ? (
         <ActivityIndicator color={colors.brandSecondary} style={{ marginTop: spacing.lg }} />
       ) : alarms.length === 0 ? (
         <Pressable style={styles.emptyAlarm} onPress={onAdd} testID="empty-add-alarm">
           <Feather name="bell" size={28} color={colors.brandSecondary} />
-          <Text style={styles.emptyTitle}>No alarms yet</Text>
-          <Text style={styles.emptySub}>
-            Set a sacred morning reminder for today’s Tithi.
-          </Text>
+          <Text style={styles.emptyTitle}>{t("noAlarms")}</Text>
+          <Text style={styles.emptySub}>{t("noAlarmsSub")}</Text>
         </Pressable>
       ) : (
         alarms.map((a) => <AlarmRow key={a.id} alarm={a} onEdit={() => onEdit(a)} />)
@@ -360,12 +376,11 @@ function AlarmsSection({
 
 function AlarmRow({ alarm, onEdit }: { alarm: Alarm; onEdit: () => void }) {
   const qc = useQueryClient();
+  const { lang } = useSettings();
   const [enabled, setEnabled] = useState(alarm.enabled);
   useEffect(() => setEnabled(alarm.enabled), [alarm.enabled]);
 
-  const h12 = ((alarm.hour + 11) % 12) + 1;
-  const ampm = alarm.hour < 12 ? "AM" : "PM";
-  const timeStr = `${h12}:${alarm.minute.toString().padStart(2, "0")} ${ampm}`;
+  const timeStr = formatTime(alarm.hour, alarm.minute, lang);
 
   return (
     <Pressable
@@ -377,7 +392,7 @@ function AlarmRow({ alarm, onEdit }: { alarm: Alarm; onEdit: () => void }) {
         <Text style={styles.alarmTime}>{timeStr}</Text>
         <Text style={styles.alarmLabel}>{alarm.label}</Text>
         <View style={styles.daysRow}>
-          {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+          {WEEK_LETTERS[lang].map((d, i) => (
             <View
               key={i}
               style={[styles.dayDot, alarm.days.includes(i) && styles.dayDotOn]}
@@ -410,6 +425,7 @@ function AlarmRow({ alarm, onEdit }: { alarm: Alarm; onEdit: () => void }) {
 }
 
 function AddButton({ bottom, onPress }: { bottom: number; onPress: () => void }) {
+  const { t } = useSettings();
   return (
     <Pressable
       onPress={onPress}
@@ -427,7 +443,7 @@ function AddButton({ bottom, onPress }: { bottom: number; onPress: () => void })
         style={styles.fabInner}
       >
         <Feather name="plus" size={22} color={colors.onBrandSecondary} />
-        <Text style={styles.fabText}>Add Alarm</Text>
+        <Text style={styles.fabText}>{t("addAlarm")}</Text>
       </LinearGradient>
     </Pressable>
   );
@@ -436,6 +452,20 @@ function AddButton({ bottom, onPress }: { bottom: number; onPress: () => void })
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   headerActions: { flexDirection: "row", gap: spacing.sm },
+  eveningCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.sm,
+  },
+  eveningTitle: { color: colors.onSurface, fontFamily: fonts.bodyMedium, fontSize: 14 },
+  eveningSub: { color: colors.muted, fontFamily: fonts.body, fontSize: 12, marginTop: 2 },
+  eveningState: { color: colors.brandSecondary, fontFamily: fonts.bodyBold, fontSize: 13 },
   masaLine: {
     color: colors.muted,
     fontFamily: fonts.body,

@@ -52,6 +52,54 @@ class TestPanchang:
         # Optional online fields may be None if source=calculated
         for k in ["sunrise", "sunset", "yoga", "karana", "rahu_kalam"]:
             assert k in d
+        # v3 Hindi fields
+        for k in [
+            "nakshatra_hindi", "yoga_hindi", "festivals_hindi",
+            "observances_hindi", "significance_hindi",
+        ]:
+            assert k in d, f"missing hindi field {k}"
+        assert isinstance(d["festivals_hindi"], list)
+        assert isinstance(d["observances_hindi"], list)
+        # Non-empty for Devanagari strings; nakshatra should be Hindi
+        assert any("\u0900" <= ch <= "\u097F" for ch in d["nakshatra_hindi"]), \
+            f"nakshatra_hindi not Devanagari: {d['nakshatra_hindi']}"
+
+    def test_diwali_has_hindi_festival_name(self, api_client):
+        r = api_client.get(
+            f"{API}/panchang",
+            params={"date": "2026-11-08", **DELHI},
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert any("दीपावली" in f for f in d["festivals_hindi"]), \
+            f"expected दीपावली · लक्ष्मी पूजा in festivals_hindi, got {d['festivals_hindi']}"
+        assert any("Diwali" in f for f in d["festivals"])
+
+    def test_range_entries_have_hindi(self, api_client):
+        r = api_client.get(
+            f"{API}/panchang/range",
+            params={"start": "2026-11-06", "days": 3, **DELHI},
+        )
+        assert r.status_code == 200, r.text
+        for d in r.json():
+            for k in ["nakshatra_hindi", "festivals_hindi", "observances_hindi", "significance_hindi"]:
+                assert k in d, f"range entry missing {k}: {d.get('date')}"
+
+    def test_month_entries_have_hindi(self, api_client):
+        r = api_client.get(
+            f"{API}/panchang/month",
+            params={"year": 2026, "month": 11, **DELHI},
+            timeout=90,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert len(data) == 30
+        for d in data[:5]:
+            for k in ["nakshatra_hindi", "festivals_hindi", "observances_hindi"]:
+                assert k in d, f"month entry missing {k}"
+        # Specifically Diwali entry should carry दीपावली
+        diwali = [d for d in data if d["date"] == "2026-11-08"][0]
+        assert any("दीपावली" in f for f in diwali["festivals_hindi"])
 
     def test_invalid_date_is_400_not_500(self, api_client):
         r = api_client.get(f"{API}/panchang", params={"date": "bad"})

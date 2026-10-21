@@ -1,16 +1,15 @@
 import { Feather } from "@react-native-vector-icons/feather";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type Panchang } from "@/src/api";
 import { fromISODate, sunriseLabel, toISODate } from "@/src/date";
-import { defaultSettings, loadSettings } from "@/src/settings-store";
+import { localeOf, localizeTimes, lp, WEEK_LETTERS, type Lang } from "@/src/i18n";
+import { useSettings } from "@/src/settings-context";
 import { colors, fonts, radius, spacing } from "@/src/theme";
-
-const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
 type Mark = "ekadashi" | "purnima" | "amavasya" | null;
 const markOf = (p: Panchang): Mark =>
@@ -21,12 +20,9 @@ export default function CalendarScreen() {
   const insets = useSafeAreaInsets();
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() + 1 });
-  const [coords, setCoords] = useState({ lat: defaultSettings.lat, lng: defaultSettings.lng });
+  const { settings, lang, t } = useSettings();
+  const coords = { lat: settings.lat, lng: settings.lng };
   const [selected, setSelected] = useState<string>(toISODate(now));
-
-  useEffect(() => {
-    loadSettings().then((s) => setCoords({ lat: s.lat, lng: s.lng }));
-  }, []);
 
   const monthQ = useQuery({
     queryKey: ["panchang-month", coords.lat, coords.lng, ym.y, ym.m],
@@ -57,7 +53,7 @@ export default function CalendarScreen() {
     });
   };
 
-  const monthName = new Date(ym.y, ym.m - 1, 1).toLocaleDateString(undefined, {
+  const monthName = new Date(ym.y, ym.m - 1, 1).toLocaleDateString(localeOf(lang), {
     month: "long",
     year: "numeric",
   });
@@ -66,10 +62,10 @@ export default function CalendarScreen() {
   return (
     <View style={styles.root} testID="calendar-screen">
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="calendar-back-button">
+        <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))} style={styles.iconBtn} testID="calendar-back-button">
           <Feather name="arrow-left" size={20} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Festival Calendar</Text>
+        <Text style={styles.title}>{t("festivalCalendar")}</Text>
         <View style={styles.iconBtn} />
       </View>
 
@@ -85,7 +81,7 @@ export default function CalendarScreen() {
         </View>
 
         <View style={styles.weekRow}>
-          {WEEKDAYS.map((w, i) => (
+          {WEEK_LETTERS[lang].map((w, i) => (
             <Text key={i} style={styles.weekday}>{w}</Text>
           ))}
         </View>
@@ -93,12 +89,12 @@ export default function CalendarScreen() {
         {monthQ.isLoading ? (
           <View style={styles.loading}>
             <ActivityIndicator color={colors.brandSecondary} />
-            <Text style={styles.muted}>Reading the Panchang…</Text>
+            <Text style={styles.muted}>{t("readingPanchang")}</Text>
           </View>
         ) : monthQ.isError ? (
           <Pressable style={styles.loading} onPress={() => monthQ.refetch()} testID="calendar-retry">
             <Feather name="refresh-cw" size={18} color={colors.error} />
-            <Text style={styles.muted}>Could not load this month. Tap to retry.</Text>
+            <Text style={styles.muted}>{t("loadFailed")}</Text>
           </Pressable>
         ) : (
           <View style={styles.grid} testID="calendar-grid">
@@ -107,6 +103,7 @@ export default function CalendarScreen() {
                 <DayCell
                   key={p.date}
                   p={p}
+                  lang={lang}
                   selected={p.date === selectedDay?.date}
                   today={p.date === todayIso}
                   onPress={() => setSelected(p.date)}
@@ -119,17 +116,17 @@ export default function CalendarScreen() {
         )}
 
         <View style={styles.legend}>
-          <Legend color={colors.brandSecondary} label="Ekadashi" />
-          <Legend color={colors.onSurface} label="Purnima" />
-          <Legend color={colors.borderStrong} label="Amavasya" ring />
-          <Legend color={colors.brandPrimary} label="Festival" star />
+          <Legend color={colors.brandSecondary} label={t("ekadashi")} />
+          <Legend color={colors.onSurface} label={t("purnima")} />
+          <Legend color={colors.borderStrong} label={t("amavasya")} ring />
+          <Legend color={colors.brandPrimary} label={t("festival")} star />
         </View>
 
-        {selectedDay ? <DayDetail p={selectedDay} /> : null}
+        {selectedDay ? <DayDetail p={selectedDay} lang={lang} /> : null}
 
         {festivals.length > 0 ? (
           <>
-            <Text style={styles.sectionTitle}>This Month</Text>
+            <Text style={styles.sectionTitle}>{t("thisMonth")}</Text>
             {festivals.map((d) => (
               <Pressable
                 key={d.date}
@@ -140,30 +137,29 @@ export default function CalendarScreen() {
                 <View style={styles.listDate}>
                   <Text style={styles.listDay}>{fromISODate(d.date).getDate()}</Text>
                   <Text style={styles.listWk}>
-                    {fromISODate(d.date).toLocaleDateString(undefined, { weekday: "short" })}
+                    {fromISODate(d.date).toLocaleDateString(localeOf(lang), { weekday: "short" })}
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.listTitle}>{d.festivals[0] ?? `${d.tithi} Vrat`}</Text>
+                  <Text style={styles.listTitle}>
+                    {lp(d, lang).festivals[0] ?? `${lp(d, lang).tithi} ${t("vrat")}`}
+                  </Text>
                   <Text style={styles.muted}>
-                    {d.paksha} {d.tithi} · {d.masa}
-                    {d.festivals.length > 1 ? ` · ${d.festivals.slice(1).join(", ")}` : ""}
+                    {lp(d, lang).tithiFull} · {lp(d, lang).masa}
+                    {d.festivals.length > 1 ? ` · ${lp(d, lang).festivals.slice(1).join(", ")}` : ""}
                   </Text>
                 </View>
               </Pressable>
             ))}
           </>
         ) : null}
-        <Text style={styles.footnote}>
-          Festivals use the Amanta (North-Indian festival dates) month system and the traditional
-          time of day for each festival. Regional observance may differ by a day.
-        </Text>
+        <Text style={styles.footnote}>{t("calendarFootnote")}</Text>
       </ScrollView>
     </View>
   );
 }
 
-function DayCell({ p, selected, today, onPress }: { p: Panchang; selected: boolean; today: boolean; onPress: () => void }) {
+function DayCell({ p, lang, selected, today, onPress }: { p: Panchang; lang: Lang; selected: boolean; today: boolean; onPress: () => void }) {
   const mark = markOf(p);
   return (
     <Pressable onPress={onPress} style={styles.cell} testID={`calendar-day-${p.date}`}>
@@ -172,7 +168,7 @@ function DayCell({ p, selected, today, onPress }: { p: Panchang; selected: boole
           {fromISODate(p.date).getDate()}
         </Text>
         <Text numberOfLines={1} style={[styles.cellTithi, selected && { color: colors.onBrandSecondary }]}>
-          {p.tithi.slice(0, 5)}
+          {lang === "hi" ? p.tithi_hindi : p.tithi.slice(0, 5)}
         </Text>
         <View style={styles.markRow}>
           {mark === "ekadashi" ? <View style={[styles.dot, { backgroundColor: colors.brandSecondary }]} /> : null}
@@ -198,23 +194,27 @@ function Legend({ color, label, ring, star }: { color: string; label: string; ri
   );
 }
 
-function DayDetail({ p }: { p: Panchang }) {
+function DayDetail({ p, lang }: { p: Panchang; lang: Lang }) {
+  const l = lp(p, lang);
   return (
     <View style={styles.detail} testID="calendar-day-detail">
       <Text style={styles.detailDate}>
-        {fromISODate(p.date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+        {fromISODate(p.date).toLocaleDateString(localeOf(lang), { weekday: "long", day: "numeric", month: "long" })}
       </Text>
-      <Text style={styles.detailTithi}>{p.tithi_hindi} · {p.tithi}</Text>
+      <Text style={styles.detailTithi}>
+        {lang === "hi" ? l.tithiFull : `${p.tithi_hindi} · ${p.tithi}`}
+      </Text>
       <Text style={styles.muted}>
-        {p.paksha} Paksha · {p.masa} · {p.nakshatra} · Sunrise {sunriseLabel(p)}
+        {l.paksha} · {l.masa} · {l.nakshatra} · {lang === "hi" ? "सूर्योदय" : "Sunrise"}{" "}
+        {localizeTimes(sunriseLabel(p), lang)}
       </Text>
-      {[...p.festivals, ...p.observances].map((f) => (
+      {[...l.festivals, ...l.observances].map((f) => (
         <View key={f} style={styles.detailTag}>
           <Feather name="star" size={12} color={colors.brandSecondary} />
           <Text style={styles.detailTagText}>{f}</Text>
         </View>
       ))}
-      <Text style={styles.detailSig}>{p.significance}</Text>
+      <Text style={styles.detailSig}>{l.significance}</Text>
     </View>
   );
 }

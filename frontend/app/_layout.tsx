@@ -8,6 +8,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { queryClient } from "@/src/query-client";
+import { SettingsProvider } from "@/src/settings-context";
 
 LogBox.ignoreAllLogs(true);
 
@@ -17,6 +18,7 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
+            <SettingsProvider>
             <KeyboardProvider>
               <StatusBar style="light" />
               <Stack
@@ -41,6 +43,7 @@ export default function RootLayout() {
                 />
               </Stack>
             </KeyboardProvider>
+            </SettingsProvider>
           </QueryClientProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>

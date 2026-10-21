@@ -11,6 +11,11 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export type Panchang = {
+  nakshatra_hindi: string;
+  yoga_hindi?: string | null;
+  festivals_hindi: string[];
+  observances_hindi: string[];
+  significance_hindi: string;
   masa: string;
   masa_hindi: string;
   festivals: string[];

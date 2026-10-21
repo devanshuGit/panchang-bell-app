@@ -3,27 +3,32 @@ import { useQuery } from "@tanstack/react-query";
 import * as Sharing from "expo-sharing";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { captureRef } from "react-native-view-shot";
 
 import { api, type Panchang } from "@/src/api";
 import { fromISODate, sunriseLabel, toISODate } from "@/src/date";
-import { defaultSettings, loadSettings } from "@/src/settings-store";
+import { localeOf, localizeTimes, lp, translate, type Lang } from "@/src/i18n";
+import { useSettings } from "@/src/settings-context";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 
-function shareText(p: Panchang, city: string) {
-  const day = fromISODate(p.date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+function shareText(p: Panchang, city: string, lang: Lang) {
+  const l = lp(p, lang);
+  const day = fromISODate(p.date).toLocaleDateString(localeOf(lang), { weekday: "long", day: "numeric", month: "long" });
+  const sunrise = localizeTimes(sunriseLabel(p), lang);
   return [
-    `ॐ आज की तिथि · Today's Tithi (${day})`,
-    `${p.tithi_hindi} · ${p.paksha} ${p.tithi}`,
-    `${p.masa_hindi} मास · ${p.masa}`,
-    ...(p.festivals.length ? [`🪔 ${p.festivals.join(" · ")}`] : []),
-    `Nakshatra: ${p.nakshatra} · Sunrise: ${sunriseLabel(p)} (${city})`,
-    p.significance,
+    lang === "hi" ? `ॐ आज की तिथि (${day})` : `ॐ आज की तिथि · Today's Tithi (${day})`,
+    lang === "hi" ? `${l.tithiFull} · ${l.paksha}` : `${p.tithi_hindi} · ${p.paksha} ${p.tithi}`,
+    lang === "hi" ? l.masa : `${p.masa_hindi} मास · ${p.masa}`,
+    ...(l.festivals.length ? [`🪔 ${l.festivals.join(" · ")}`] : []),
+    lang === "hi"
+      ? `नक्षत्र: ${l.nakshatra} · सूर्योदय: ${sunrise} (${city})`
+      : `Nakshatra: ${p.nakshatra} · Sunrise: ${sunrise} (${city})`,
+    l.significance,
     "",
-    "Sent with Tithi Alarm 🔔",
+    translate(lang, "sentWith"),
   ].join("\n");
 }
 
@@ -31,13 +36,9 @@ export default function ShareScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const cardRef = useRef<View>(null);
-  const [settings, setSettings] = useState(defaultSettings);
+  const { settings, lang, t } = useSettings();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadSettings().then(setSettings);
-  }, []);
 
   const today = toISODate(new Date());
   const q = useQuery({
@@ -52,14 +53,14 @@ export default function ShareScreen() {
     setStatus(null);
     try {
       if (Platform.OS === "web" || !(await Sharing.isAvailableAsync())) {
-        await Share.share({ message: shareText(p, settings.city) });
+        await Share.share({ message: shareText(p, settings.city, lang) });
         return;
       }
       const uri = await captureRef(cardRef, { format: "png", quality: 1, result: "tmpfile" });
-      await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share today's Tithi", UTI: "public.png" });
+      await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: t("shareDialog"), UTI: "public.png" });
     } catch (e) {
       console.warn("share failed", e);
-      setStatus("Couldn't share the image. Try sharing as text instead.");
+      setStatus(t("shareFailed"));
     } finally {
       setBusy(false);
     }
@@ -68,19 +69,19 @@ export default function ShareScreen() {
   const shareAsText = async () => {
     if (!p) return;
     try {
-      await Share.share({ message: shareText(p, settings.city) });
+      await Share.share({ message: shareText(p, settings.city, lang) });
     } catch {
-      setStatus("Sharing was cancelled.");
+      setStatus(t("shareCancelled"));
     }
   };
 
   return (
     <View style={styles.root} testID="share-screen">
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="share-close-button">
+        <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))} style={styles.iconBtn} testID="share-close-button">
           <Feather name="x" size={20} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Share Today’s Tithi</Text>
+        <Text style={styles.title}>{t("shareTitle")}</Text>
         <View style={styles.iconBtn} />
       </View>
 
@@ -97,24 +98,24 @@ export default function ShareScreen() {
             >
               <Text style={styles.bigOm}>ॐ</Text>
               <Text style={styles.cardDate}>
-                {fromISODate(p.date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                {fromISODate(p.date).toLocaleDateString(localeOf(lang), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
               </Text>
-              <Text style={styles.cardKicker}>आज की तिथि · Today’s Tithi</Text>
+              <Text style={styles.cardKicker}>{t("shareKicker")}</Text>
               <Text style={styles.cardTithiHi}>{p.tithi_hindi}</Text>
-              <Text style={styles.cardTithiEn}>{p.paksha} {p.tithi}</Text>
+              <Text style={styles.cardTithiEn}>{lp(p, lang).tithiFull}</Text>
               <Text style={styles.cardMasa}>{p.paksha_hindi} · {p.masa_hindi} मास</Text>
               {p.festivals.length ? (
                 <View style={styles.cardFestival}>
-                  <Text style={styles.cardFestivalText}>🪔 {p.festivals.join(" · ")}</Text>
+                  <Text style={styles.cardFestivalText}>🪔 {lp(p, lang).festivals.join(" · ")}</Text>
                 </View>
               ) : null}
               <View style={styles.divider} />
-              <Text style={styles.cardSig}>{p.significance}</Text>
+              <Text style={styles.cardSig}>{lp(p, lang).significance}</Text>
               <View style={styles.cardMetaRow}>
-                <Text style={styles.cardMeta}>✦ {p.nakshatra}</Text>
-                <Text style={styles.cardMeta}>☀ {sunriseLabel(p)} · {settings.city}</Text>
+                <Text style={styles.cardMeta}>✦ {lp(p, lang).nakshatra}</Text>
+                <Text style={styles.cardMeta}>☀ {localizeTimes(sunriseLabel(p), lang)} · {settings.city}</Text>
               </View>
-              <Text style={styles.brand}>Tithi Alarm 🔔</Text>
+              <Text style={styles.brand}>{t("appName")}</Text>
             </LinearGradient>
           </View>
         )}
@@ -134,14 +135,14 @@ export default function ShareScreen() {
             ) : (
               <>
                 <Feather name="image" size={16} color={colors.onBrandSecondary} />
-                <Text style={styles.primaryText}>Share Card (WhatsApp, etc.)</Text>
+                <Text style={styles.primaryText}>{t("shareCard")}</Text>
               </>
             )}
           </LinearGradient>
         </Pressable>
         <Pressable onPress={shareAsText} disabled={!p} style={styles.secondaryBtn} testID="share-text-button">
           <Feather name="message-circle" size={16} color={colors.brandSecondary} />
-          <Text style={styles.secondaryText}>Share as Text</Text>
+          <Text style={styles.secondaryText}>{t("shareAsText")}</Text>
         </Pressable>
       </View>
     </View>

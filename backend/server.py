@@ -193,6 +193,81 @@ def observances_for(tithi_number: int) -> List[str]:
     }.get(tithi_number, [])
 
 
+NAKSHATRA_HI = dict(zip(NAKSHATRAS, [
+    "अश्विनी", "भरणी", "कृत्तिका", "रोहिणी", "मृगशिरा", "आर्द्रा", "पुनर्वसु", "पुष्य", "आश्लेषा",
+    "मघा", "पूर्वा फाल्गुनी", "उत्तरा फाल्गुनी", "हस्त", "चित्रा", "स्वाति", "विशाखा", "अनुराधा",
+    "ज्येष्ठा", "मूल", "पूर्वाषाढ़ा", "उत्तराषाढ़ा", "श्रवण", "धनिष्ठा", "शतभिषा", "पूर्वा भाद्रपद",
+    "उत्तरा भाद्रपद", "रेवती",
+]))
+
+YOGA_HI = {
+    "Vishkambha": "विष्कुम्भ", "Priti": "प्रीति", "Ayushman": "आयुष्मान", "Saubhagya": "सौभाग्य",
+    "Shobhana": "शोभन", "Atiganda": "अतिगण्ड", "Sukarma": "सुकर्मा", "Dhriti": "धृति",
+    "Shoola": "शूल", "Shula": "शूल", "Ganda": "गण्ड", "Vriddhi": "वृद्धि", "Dhruva": "ध्रुव",
+    "Vyaghata": "व्याघात", "Harshana": "हर्षण", "Vajra": "वज्र", "Siddhi": "सिद्धि",
+    "Vyatipata": "व्यतीपात", "Variyana": "वरीयान", "Variyan": "वरीयान", "Parigha": "परिघ",
+    "Shiva": "शिव", "Siddha": "सिद्ध", "Sadhya": "साध्य", "Shubha": "शुभ", "Shukla": "शुक्ल",
+    "Brahma": "ब्रह्म", "Indra": "इन्द्र", "Vaidhriti": "वैधृति",
+}
+
+FESTIVAL_HI = {
+    "Ugadi / Gudi Padwa · Chaitra Navratri begins": "उगादि / गुड़ी पड़वा · चैत्र नवरात्रि आरंभ",
+    "Ram Navami": "राम नवमी", "Hanuman Jayanti": "हनुमान जयंती",
+    "Akshaya Tritiya": "अक्षय तृतीया", "Buddha Purnima": "बुद्ध पूर्णिमा",
+    "Nirjala Ekadashi": "निर्जला एकादशी", "Vat Purnima": "वट पूर्णिमा",
+    "Jagannath Rath Yatra": "जगन्नाथ रथ यात्रा", "Devshayani Ekadashi": "देवशयनी एकादशी",
+    "Guru Purnima": "गुरु पूर्णिमा", "Nag Panchami": "नाग पंचमी", "Raksha Bandhan": "रक्षा बंधन",
+    "Krishna Janmashtami": "कृष्ण जन्माष्टमी", "Hartalika Teej": "हरतालिका तीज",
+    "Ganesh Chaturthi": "गणेश चतुर्थी", "Anant Chaturdashi": "अनंत चतुर्दशी",
+    "Mahalaya Amavasya": "महालया अमावस्या", "Sharad Navratri begins": "शारदीय नवरात्रि आरंभ",
+    "Durga Ashtami": "दुर्गा अष्टमी", "Dussehra (Vijayadashami)": "दशहरा (विजयादशमी)",
+    "Sharad Purnima": "शरद पूर्णिमा", "Karwa Chauth": "करवा चौथ", "Dhanteras": "धनतेरस",
+    "Narak Chaturdashi": "नरक चतुर्दशी", "Diwali · Lakshmi Puja": "दीपावली · लक्ष्मी पूजा",
+    "Govardhan Puja": "गोवर्धन पूजा", "Bhai Dooj": "भाई दूज", "Chhath Puja": "छठ पूजा",
+    "Dev Uthani Ekadashi": "देवउठनी एकादशी",
+    "Kartik Purnima · Dev Deepawali": "कार्तिक पूर्णिमा · देव दीपावली",
+    "Gita Jayanti · Mokshada Ekadashi": "गीता जयंती · मोक्षदा एकादशी",
+    "Vasant Panchami": "वसंत पंचमी", "Maha Shivaratri": "महाशिवरात्रि",
+    "Holika Dahan": "होलिका दहन", "Holi": "होली", "Makar Sankranti": "मकर संक्रांति",
+    "Mesha Sankranti · Baisakhi": "मेष संक्रांति · बैसाखी",
+}
+
+OBSERVANCE_HI = {
+    "Ekadashi Vrat": "एकादशी व्रत", "Pradosh Vrat": "प्रदोष व्रत",
+    "Sankashti Chaturthi": "संकष्टी चतुर्थी", "Vinayaka Chaturthi": "विनायक चतुर्थी",
+    "Masik Shivaratri": "मासिक शिवरात्रि", "Purnima Vrat": "पूर्णिमा व्रत", "Amavasya": "अमावस्या",
+}
+
+SIGNIFICANCE_HI = {
+    "Pratipada": "पक्ष का आरंभ; नए कार्यों के लिए शुभ।",
+    "Dwitiya": "यात्रा और गृह-निर्माण की नींव के लिए अनुकूल।",
+    "Tritiya": "देवी उपासना का दिन; सुहागिनें हरतालिका तीज मनाती हैं।",
+    "Chaturthi": "संकष्टी चतुर्थी — भगवान गणेश को समर्पित; चंद्रोदय तक व्रत।",
+    "Panchami": "नाग पंचमी; नाग देवता और विद्या की उपासना।",
+    "Shashthi": "स्कंद षष्ठी — भगवान कार्तिकेय को समर्पित।",
+    "Saptami": "सूर्य देव को समर्पित; सूर्योदय पर गायत्री मंत्र जपें।",
+    "Ashtami": "दुर्गा अष्टमी / कृष्ण अष्टमी — व्रत और भजन।",
+    "Navami": "शुक्ल पक्ष में राम नवमी; शारदीय नवरात्रि में महानवमी।",
+    "Dashami": "आश्विन में विजयादशमी; बुराई पर अच्छाई की विजय का दिन।",
+    "Ekadashi": "व्रत का दिन — अन्न का त्याग, भगवान विष्णु को समर्पित।",
+    "Dwadashi": "एकादशी व्रत का पारण; दान और ब्राह्मण भोजन।",
+    "Trayodashi": "प्रदोष व्रत — संध्या में भगवान शिव की पूजा।",
+    "Chaturdashi": "कृष्ण पक्ष में मासिक शिवरात्रि; दीपावली से पहले नरक चतुर्दशी।",
+    "Purnima": "पूर्णिमा व्रत; सत्यनारायण कथा, सभी व्रतों के लिए शुभ।",
+    "Amavasya": "अमावस्या; पितृ तर्पण, पिंडदान और पूर्वजों का स्मरण।",
+}
+
+
+def add_hindi(p: dict) -> dict:
+    """Attach Hindi names for every displayed Panchang field (falls back to English)."""
+    p["nakshatra_hindi"] = NAKSHATRA_HI.get(p["nakshatra"], p["nakshatra"])
+    p["yoga_hindi"] = YOGA_HI.get(p.get("yoga") or "", p.get("yoga"))
+    p["festivals_hindi"] = [FESTIVAL_HI.get(f, f) for f in p["festivals"]]
+    p["observances_hindi"] = [OBSERVANCE_HI.get(o, o) for o in p["observances"]]
+    p["significance_hindi"] = SIGNIFICANCE_HI.get(p["tithi"], p["significance"])
+    return p
+
+
 def _elongation_signed(jd: float) -> float:
     d = _norm(_moon_longitude(jd) - _sun_longitude(jd))
     return d - 360 if d > 180 else d
@@ -379,6 +454,11 @@ def _sunrise_utc(d: date, lat: float, lng: float) -> datetime:
 
 
 class Panchang(BaseModel):
+    nakshatra_hindi: str
+    yoga_hindi: Optional[str] = None
+    festivals_hindi: List[str]
+    observances_hindi: List[str]
+    significance_hindi: str
     masa: str
     masa_hindi: str
     festivals: List[str]
@@ -487,7 +567,7 @@ async def build_day(d: date, lat: float, lng: float) -> dict:
     local = compute_panchang(datetime.combine(d, time(12), tzinfo=timezone.utc), lat, lng)
     online = await fetch_online(d, lat, lng)
     if not online:
-        return local
+        return add_hindi(local)
     num = online["tithi_number"]
     name, hindi, paksha = _tithi_names(num)
     jd = _julian_day(datetime.fromisoformat(local["sunrise_utc"]))
@@ -510,7 +590,7 @@ async def build_day(d: date, lat: float, lng: float) -> dict:
         "observances": observances_for(num),
         "source": "online",
     })
-    return local
+    return add_hindi(local)
 
 
 def _parse_date(s: Optional[str]) -> date:

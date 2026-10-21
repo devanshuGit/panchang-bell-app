@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 3 (Hindi mode + evening-before reminders). Backend: 28/28 pytest cases pass, including 3 new tests for Hindi fields on /panchang, /panchang/range and /panchang/month (nakshatra_hindi, yoga_hindi, festivals_hindi containing 'दीपावली · लक्ष्मी पूजा' on 2026-11-08, observances_hindi, significance_hindi); all previous regressions still green. Frontend (web preview, mobile viewport 390x844): Settings screen exposes language-switch with language-hi/language-en and the new evening-reminder-settings card with evening-reminder-toggle (default ON) + chips evening-time-18/19/20/21 (default 19 highlighted); switching to Hindi flips the entire UI: Settings title 'सेटिंग्स', menus (भाषा, स्थान, पूर्व संध्या अनुस्मारक, डिफ़ॉल्ट ध्वनि), Home header 'नमस्ते 🙏' + Hindi date 'बुधवार, 21 अक्टूबर', today-tithi-name 'शुक्ल दशमी', today-masa 'आश्विन मास', Nakshatra 'धनिष्ठा', Yoga 'गण्ड', Sunrise 'सुबह 6:25', Rahu Kaal 'दोपहर 12:05 – दोपहर 1:30', sections 'आगामी तिथियाँ' & 'दैनिक अलार्म', FAB 'अलार्म जोड़ें', attribution 'पंचांग स्रोत: नित्य पंचांगम (CC-BY 4.0) · लाहिरी अयनांश'. Evening card updates subtitle after chip change (selecting 20 shows 'रात 8:00 · त्योहार, एकादशी, पूर्णिमा, अमावस्या'); toggling off shows evening-reminder-state 'बंद' in Hindi / 'Off' in English. Calendar: title 'त्योहार कैलेंडर', Hindi month name 'अक्टूबर 2026' → 'नवंबर 2026', Hindi weekday row (र सो मं बु गु शु श), Hindi tithi cells, legend 'एकादशी · पूर्णिमा · अमावस्या · त्योहार'. Tapping calendar-day-2026-11-08 in Nov view shows calendar-day-detail with 'कृष्ण चतुर्दशी · कृष्ण पक्ष · आश्विन मास · स्वाति · सूर्योदय सुबह 6:38 · नरक चतुर्दशी · दीपावली · लक्ष्मी पूजा · मासिक शिवरात्रि'. Share screen: 'आज की तिथि साझा करें', Hindi tithi/significance, buttons 'कार्ड साझा करें (WhatsApp आदि)' & 'टेक्स्ट के रूप में साझा करें'. Alarm-setup: 'नया अलार्म', Hindi weekday buttons (रवि/सोम/मंगल/बुध/गुरु/शुक्र/शनि), sound labels 'ॐ जाप' & 'मंदिर की घंटी', save-alarm-button 'अलार्म सहेजें'. Switching back to language-en returns everything to English with no Hindi leftovers in Settings/Home; language choice persists across page reload. Native-only expo-notifications evening scheduling (expo-notifications on native, not web) was not exercised, per instructions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "alarm-setup.tsx label-input default value",
+        "issue": "Default label for a new alarm shows 'Morning Tithi' instead of 'सुबह की तिथि' when the app is in Hindi mode. Root cause: `const [label, setLabel] = useState(() => t('defaultLabel'))` on line 55 captures the translation during the first render, which happens before SettingsProvider hydrates lang='hi' from storage. The surrounding UI (title 'नया अलार्म', weekday buttons, sound labels, save button) is correctly Hindi, confirming context is loaded by paint time – only the label state is stuck on the initial English snapshot. Fix: derive the label from `t()` reactively (e.g. useEffect that resets label when lang changes and the field is untouched, or compute the placeholder/initial value with `useMemo` keyed on lang, or use the current lang directly when the component mounts after the Settings context is ready). Reference: /app/frontend/app/alarm-setup.tsx:55",
+        "testID": "label-input",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "alarm-setup save → navigate home (web preview)",
+        "issue": "After tapping save-alarm-button on /alarm-setup opened via deep link, the app logs 'The action GO_BACK was not handled by any navigator' and never returns to home-screen (Expo Router has no history when the page is loaded directly). Not blocking in the real app flow (user enters via the FAB), but will bite anyone who deep-links or uses the back-button after a direct save. Consider `router.replace('/')` instead of `router.back()` after save. Reference: alarm-setup.tsx save handler.",
+        "affected_testIDs": ["save-alarm-button", "settings-back-button"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_panchang_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "alarm-setup.tsx:55 — make the default label reactive to the current language so Hindi mode shows 'सुबह की तिथि' instead of 'Morning Tithi' on a fresh alarm.",
+    "Replace `router.back()` after save/cancel on alarm-setup (and settings) with `router.replace('/')` (or guard with `router.canGoBack()`) so direct deep-link flows don't trigger the GO_BACK warning on web."
+  ],
+  "critical_code_review_comments": [
+    "src/i18n.ts stores a long static map in module scope; fine today but if more locales get added, consider a lazy loader to keep bundle lean.",
+    "settings-context.tsx: the language choice is persisted but there is no migration path if the stored shape ever changes — add a schema version field alongside eveningEnabled/eveningHour/eveningMinute so you can safely evolve settings later.",
+    "server.py Hindi dictionaries (NAKSHATRA_HI, YOGA_HI, FESTIVAL_HI, OBSERVANCE_HI, SIGNIFICANCE_HI) silently fall back to the English string when a key is missing — add a backend unit test or log line so missing translations are discoverable instead of silently reaching the UI.",
+    "add_hindi() mutates the dict in-place and also returns it; pick one convention to avoid confusion for callers (especially where it's chained inside build_day)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_panchang_api.py"
+  ],
+  "success_rate": {
+    "backend": "100% (28/28 pytest incl. 3 new Hindi-field tests)",
+    "frontend": "~95% — every Hindi/English flow in the request verified; one real bug: alarm-setup default label is not localized."
+  },
+  "seed_data_creation": "No new seed data. Tests create/delete a TEST_ alarm and restore settings. Alarms collection still carries the earlier debug alarms from previous iterations; harmless.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Full test file: /app/backend/tests/test_panchang_api.py (28 cases). To test Hindi UI, call `localStorage.clear()` first (to drop any persisted lang) then toggle via Settings → language-hi. Home testIDs: open-settings-button / open-calendar-button / open-share-button (NOT 'btn-settings'). Calendar nav testIDs: calendar-prev-month / calendar-next-month. Container date is 2026-10-21 so today = Shukla Dashami (Vijayadashami) in Ashwin. Diwali is 2026-11-08 — tap it via calendar-day-2026-11-08 after one calendar-next-month click. Public URL is EXPO_PUBLIC_BACKEND_URL (see /app/frontend/.env). Native-only features (expo-notifications dated triggers for evening-before reminders, om.wav/bell.wav playback) are not testable in the web preview.",
+  "rca_of_issue": "Alarm-setup default label bug: useState initializer `() => t('defaultLabel')` runs during the first render of alarm-setup. SettingsProvider loads lang from AsyncStorage asynchronously; even though its state is updated before paint in most cases, the initializer still captures whatever `t()` returned at that first synchronous render (English default). Subsequent re-renders see the updated lang, but `label` state is already fixed — it only changes when the user types. Fix with either (a) `useEffect(() => { if (!dirty) setLabel(t('defaultLabel')); }, [lang])`, or (b) read placeholder from `t('labelPlaceholder')` and keep the stored value empty until user types, or (c) wait for `settingsReady` from the context before mounting the form."
+}

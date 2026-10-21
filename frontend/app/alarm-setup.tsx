@@ -18,17 +18,18 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
+import { formatTime, WEEK_SHORT, type StringKey } from "@/src/i18n";
 import { ensureNotificationPermission } from "@/src/notifications";
-import { loadSettings } from "@/src/settings-store";
+import { useSettings } from "@/src/settings-context";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 
-const SOUNDS = [
-  { key: "om", label: "Om Chant", hindi: "ॐ", file: require("../assets/sounds/om.wav") },
-  { key: "bell", label: "Temple Bell", hindi: "🔔", file: require("../assets/sounds/bell.wav") },
-  { key: "default", label: "System Default", hindi: "🔊", file: null },
+const SOUNDS: { key: string; labelKey: StringKey; hindi: string; file: number | null }[] = [
+  { key: "om", labelKey: "soundOm", hindi: "ॐ", file: require("../assets/sounds/om.wav") },
+  { key: "bell", labelKey: "soundBell", hindi: "🔔", file: require("../assets/sounds/bell.wav") },
+  { key: "default", labelKey: "soundDefault", hindi: "🔊", file: null },
 ];
 
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_INDEXES = [0, 1, 2, 3, 4, 5, 6];
 
 export default function AlarmSetup() {
   const router = useRouter();
@@ -50,8 +51,9 @@ export default function AlarmSetup() {
     d.setHours(6, 0, 0, 0);
     return d;
   });
-  const [label, setLabel] = useState("Morning Tithi");
-  const [sound, setSound] = useState("om");
+  const { settings, lang, t } = useSettings();
+  const [label, setLabel] = useState(() => t("defaultLabel"));
+  const [sound, setSound] = useState(settings.defaultSound);
   const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [saving, setSaving] = useState(false);
   const [showPicker, setShowPicker] = useState(Platform.OS === "ios");
@@ -67,9 +69,15 @@ export default function AlarmSetup() {
     }
   }, [existing]);
 
+  // Defaults for a new alarm follow the (possibly late-loading) language and sound settings.
   useEffect(() => {
-    if (!id) loadSettings().then((s) => setSound(s.defaultSound));
-  }, [id]);
+    if (!id) setLabel(t("defaultLabel"));
+  }, [id, t]);
+  useEffect(() => {
+    if (!id) setSound(settings.defaultSound);
+  }, [id, settings.defaultSound]);
+
+  const close = () => (router.canGoBack() ? router.back() : router.replace("/"));
 
   const playerRef = React.useRef<ReturnType<typeof createAudioPlayer> | null>(null);
   useEffect(() => () => playerRef.current?.remove(), []);
@@ -104,7 +112,7 @@ export default function AlarmSetup() {
       if (existing) await api.updateAlarm(existing.id, data);
       else await api.createAlarm({ ...data, notification_id: null });
       await qc.invalidateQueries({ queryKey: ["alarms"] });
-      router.back();
+      close();
     } catch (e) {
       console.warn("save failed", e);
     } finally {
@@ -118,7 +126,7 @@ export default function AlarmSetup() {
     try {
       await api.deleteAlarm(existing.id);
       await qc.invalidateQueries({ queryKey: ["alarms"] });
-      router.back();
+      close();
     } finally {
       setSaving(false);
     }
@@ -128,13 +136,13 @@ export default function AlarmSetup() {
     <View style={styles.root} testID="alarm-setup-screen">
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => close()}
           style={styles.iconBtn}
           testID="back-button"
         >
           <Feather name="x" size={20} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>{existing ? "Edit Alarm" : "New Alarm"}</Text>
+        <Text style={styles.title}>{existing ? t("editAlarm") : t("newAlarm")}</Text>
         {existing ? (
           <Pressable onPress={del} style={styles.iconBtn} testID="delete-alarm-button">
             <Feather name="trash-2" size={18} color={colors.error} />
@@ -150,7 +158,7 @@ export default function AlarmSetup() {
           paddingBottom: insets.bottom + 120,
         }}
       >
-        <Text style={styles.sectionLabel}>Alarm Time</Text>
+        <Text style={styles.sectionLabel}>{t("alarmTime")}</Text>
         <View style={styles.timeCard}>
           {Platform.OS === "ios" ? (
             <DateTimePicker
@@ -170,11 +178,7 @@ export default function AlarmSetup() {
                 testID="android-time-picker-button"
               >
                 <Text style={styles.androidTimeText}>
-                  {time.toLocaleTimeString(undefined, {
-                    hour: "numeric",
-                    minute: "2-digit",
-                    hour12: true,
-                  })}
+                  {formatTime(time.getHours(), time.getMinutes(), lang)}
                 </Text>
               </Pressable>
               {showPicker && (
@@ -192,13 +196,14 @@ export default function AlarmSetup() {
           )}
         </View>
 
-        <Text style={styles.sectionLabel}>Repeat</Text>
+        <Text style={styles.sectionLabel}>{t("repeat")}</Text>
         <View style={styles.daysRow}>
-          {DAY_LABELS.map((d, i) => {
+          {DAY_INDEXES.map((i) => {
+            const d = WEEK_SHORT[lang][i];
             const on = days.includes(i);
             return (
               <Pressable
-                key={d}
+                key={i}
                 onPress={() => toggleDay(i)}
                 style={[styles.dayBtn, on && styles.dayBtnOn]}
                 testID={`day-${i}`}
@@ -211,17 +216,17 @@ export default function AlarmSetup() {
           })}
         </View>
 
-        <Text style={styles.sectionLabel}>Label</Text>
+        <Text style={styles.sectionLabel}>{t("label")}</Text>
         <TextInput
           value={label}
           onChangeText={setLabel}
-          placeholder="e.g. Morning Tithi"
+          placeholder={t("labelPlaceholder")}
           placeholderTextColor={colors.muted}
           style={styles.input}
           testID="label-input"
         />
 
-        <Text style={styles.sectionLabel}>Alarm Sound</Text>
+        <Text style={styles.sectionLabel}>{t("alarmSound")}</Text>
         {SOUNDS.map((s) => {
           const selected = sound === s.key;
           return (
@@ -232,7 +237,7 @@ export default function AlarmSetup() {
               testID={`sound-${s.key}`}
             >
               <Text style={styles.soundEmoji}>{s.hindi}</Text>
-              <Text style={styles.soundLabel}>{s.label}</Text>
+              <Text style={styles.soundLabel}>{t(s.labelKey)}</Text>
               <View style={{ flex: 1 }} />
               {s.file ? (
                 <Pressable
@@ -244,7 +249,7 @@ export default function AlarmSetup() {
                   testID={`preview-${s.key}`}
                 >
                   <Feather name="play" size={14} color={colors.brandSecondary} />
-                  <Text style={styles.previewText}>Preview</Text>
+                  <Text style={styles.previewText}>{t("preview")}</Text>
                 </Pressable>
               ) : null}
               <Feather
@@ -259,10 +264,7 @@ export default function AlarmSetup() {
 
         <View style={styles.note}>
           <Feather name="info" size={14} color={colors.muted} />
-          <Text style={styles.noteText}>
-            Each morning’s reminder names that day’s Tithi and festival. Om Chant and Temple
-            Bell ring in the installed app; Expo Go plays the phone’s default sound instead.
-          </Text>
+          <Text style={styles.noteText}>{t("alarmNote")}</Text>
         </View>
       </ScrollView>
 
@@ -288,7 +290,7 @@ export default function AlarmSetup() {
               <>
                 <Feather name="bell" size={16} color={colors.onBrandSecondary} />
                 <Text style={styles.saveText}>
-                  {existing ? "Update Alarm" : "Save Alarm"}
+                  {existing ? t("updateAlarm") : t("saveAlarm")}
                 </Text>
               </>
             )}
